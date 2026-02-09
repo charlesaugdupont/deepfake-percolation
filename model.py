@@ -18,10 +18,17 @@ class DeepfakePercolationModel:
         return nx.barabasi_albert_graph(self.cfg.num_agents, self.cfg.ba_m)
 
     def _initialize_agent_states(self):
+        # Node-level beliefs
         for n in self.G.nodes():
             w = np.clip(np.random.normal(self.cfg.w_mean, self.cfg.w_std), 0, 1)
             self.G.nodes[n]['w'] = w
 
+            # Global belief priors (same for all, but could be heterogeneous)
+            prior = self.cfg.initial_trust_prior
+            self.G.nodes[n]['g_alpha'] = prior * (1 - self.cfg.global_prevalence)
+            self.G.nodes[n]['g_beta'] = prior * self.cfg.global_prevalence
+
+        # Edge-level trust
         alpha0 = self.cfg.initial_trust_prior * self.cfg.baseline_trust
         beta0 = self.cfg.initial_trust_prior * (1 - self.cfg.baseline_trust)
 
@@ -31,15 +38,32 @@ class DeepfakePercolationModel:
                 v: {'alpha': alpha0, 'beta': beta0}
             }
 
+    # ---- Trust helpers ----
+
     def get_trust(self, observer, sender):
         return self.G[observer][sender]['trust'][observer]
 
-    def update_trust(self, observer, sender, sender_was_correct: bool):
+    def update_local_trust(self, observer, sender, sender_correct: bool):
         trust = self.get_trust(observer, sender)
-        if sender_was_correct:
+        if sender_correct:
             trust['alpha'] += 1
         else:
             trust['beta'] += 1
+
+    # ---- Global belief helpers ----
+
+    def update_global_belief(self, agent, is_fake: bool):
+        if is_fake:
+            self.G.nodes[agent]['g_beta'] += 1
+        else:
+            self.G.nodes[agent]['g_alpha'] += 1
+
+    def get_p_global(self, agent):
+        a = self.G.nodes[agent]['g_alpha']
+        b = self.G.nodes[agent]['g_beta']
+        return b / (a + b)
+
+    # ---- Cascade ----
 
     def run_cascade(self, source_node: int, is_ground_truth_fake: bool):
         queue = collections.deque()
@@ -52,8 +76,8 @@ class DeepfakePercolationModel:
         stats = {
             'total_shared': 0,
             'utility': 0.0,
-            'num_received': 0,     # decision opportunities
-            'num_verified': 0      # VERIFY actions taken
+            'num_received': 0,
+            'num_verified': 0
         }
 
         while queue:
@@ -62,8 +86,10 @@ class DeepfakePercolationModel:
 
             trust = self.get_trust(current, sender)
             w = self.G.nodes[current]['w']
+            p_global = self.get_p_global(current)
+
             p_fake = AgentLogic.estimate_p_fake(
-                trust['alpha'], trust['beta'], w, self.cfg
+                trust['alpha'], trust['beta'], w, p_global
             )
 
             action = AgentLogic.make_decision(p_fake, self.cfg)
@@ -75,9 +101,19 @@ class DeepfakePercolationModel:
                 detected_as_fake = AgentLogic.perform_verification(
                     is_ground_truth_fake, self.cfg
                 )
+
+                # Update own beliefs
+                self.update_global_belief(current, is_ground_truth_fake)
+
                 sender_correct = (detected_as_fake == is_ground_truth_fake)
-                self.update_trust(current, sender, sender_correct)
-                shared = not detected_as_fake
+                self.update_local_trust(current, sender, sender_correct)
+
+                if detected_as_fake:
+                    # ---- Debunk spreads ----
+                    for nbr in self.G.neighbors(current):
+                        self.update_global_belief(nbr, True)
+                else:
+                    shared = True
 
             elif action == 'SHARE':
                 shared = True
