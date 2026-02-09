@@ -4,106 +4,78 @@ from tqdm import tqdm
 from config import SimConfig
 from model import DeepfakePercolationModel
 
-def run_resilience_experiment():
+def run_experiment():
+    print("Initializing Deepfake Percolation Experiment...")
     
-    # Sweep Parameters
-    costs = np.linspace(1, 10, 15)
-    prevalences = np.linspace(0.1, 0.9, 15)
+    # 1. Define Sweep Range for Cost (C)
+    # We expect a transition: Low Cost = High Verification = Low Spread
+    # High Cost = Low Verification = High Spread
+    costs = np.linspace(0.0, 10.0, 20)
     
-    # Storage for 4 Heatmaps
-    map_fake_size = np.zeros((len(prevalences), len(costs)))
-    map_true_size = np.zeros((len(prevalences), len(costs)))
-    map_utility   = np.zeros((len(prevalences), len(costs)))
-    map_verification_rate = np.zeros((len(prevalences), len(costs)))
+    avg_cascade_sizes = []
+    verification_ratios = []
     
-    # Simulation Parameters
-    NUM_STEPS = 50 
-    
-    for i, p_val in enumerate(tqdm(prevalences, desc="Prevalence")):
-        for j, c_val in enumerate(costs):
+    # Run simulation for each Cost value
+    for cost in tqdm(costs, desc="Simulating Cost Regimes"):
+        
+        # Create Config
+        cfg = SimConfig(
+            num_agents=500,
+            C=cost,
+            global_prevalence=0.5, # High danger environment
+            network_type='watts_strogatz',
+            ws_k=6,
+            ws_p=0.1
+        )
+        
+        # Rebuild model fresh for each parameter point
+        # (Or you could keep the same network and just reset agents)
+        model = DeepfakePercolationModel(cfg)
+        
+        # Run M cascades (Monte Carlo)
+        num_cascades = 50
+        sizes = []
+        verifications = []
+        
+        for _ in range(num_cascades):
+            # Pick a random seed
+            seed = np.random.randint(0, cfg.num_agents)
             
-            # Setup Model
-            cfg = SimConfig(
-                num_agents=200, 
-                global_prevalence=p_val,
-                C=c_val,
-                w=0.3,
-                network_type='watts_strogatz'
-            )
-            model = DeepfakePercolationModel(cfg)
+            # Inject a FAKE news item
+            # We want to see how far a FAKE item travels
+            stats = model.run_cascade(source_node=seed, is_ground_truth_fake=True)
             
-            # Trackers
-            fake_sizes = []
-            true_sizes = []
-            verification_ratios = []
+            # Record normalized cascade size
+            sizes.append(stats['total_shared'] / cfg.num_agents)
             
-            # Run cascades
-            for step in range(NUM_STEPS):
-                is_fake = np.random.random() < p_val
-                seed = np.random.randint(0, cfg.num_agents)
-                stats = model.run_cascade(seed, is_ground_truth_fake=is_fake)
+            # Record verification ratio (verifications / reach)
+            if stats['total_reached'] > 0:
+                verifications.append(stats['total_verified'] / stats['total_reached'])
+            else:
+                verifications.append(0)
                 
-                norm_size = stats['total_shared'] / cfg.num_agents
-                
-                if is_fake:
-                    fake_sizes.append(norm_size)
-                else:
-                    true_sizes.append(norm_size)
-                
-                # Verification rate
-                if stats['total_reached'] > 1:
-                    ratio = stats['total_verified'] / (stats['total_reached'] - 1)
-                    verification_ratios.append(ratio)
-                else:
-                    verification_ratios.append(0)
+        avg_cascade_sizes.append(np.mean(sizes))
+        verification_ratios.append(np.mean(verifications))
+        
+    # --- Plotting Results ---
+    fig, ax1 = plt.subplots(figsize=(10, 6))
 
-            # Aggregate
-            map_fake_size[i, j] = np.mean(fake_sizes) if fake_sizes else 0
-            map_true_size[i, j] = np.mean(true_sizes) if true_sizes else 0
-            map_verification_rate[i, j] = np.mean(verification_ratios)
-            
-            total_util = sum(d.get('utility', 0) for n, d in model.G.nodes(data=True))
-            avg_util = total_util / (cfg.num_agents * NUM_STEPS)
-            map_utility[i, j] = avg_util
-    
-    # Plotting
-    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
-    fig.suptitle('Deepfake Percolation: Phase Diagram (Simplified Model)', fontsize=16, fontweight='bold')
-    
-    extent = [1, 10, 0.1, 0.9]
-    
-    # Plot 1: Fake News Spread
-    im1 = axes[0, 0].imshow(map_fake_size, origin='lower', aspect='auto', extent=extent, cmap='Reds')
-    axes[0, 0].set_title('Avg Fake Cascade Size', fontweight='bold')
-    axes[0, 0].set_ylabel('Prevalence (P_global)', fontweight='bold')
-    cbar1 = plt.colorbar(im1, ax=axes[0, 0])
-    cbar1.set_label('Fraction of network', fontweight='bold')
-    
-    # Plot 2: True News Spread
-    im2 = axes[0, 1].imshow(map_true_size, origin='lower', aspect='auto', extent=extent, cmap='Greens')
-    axes[0, 1].set_title('Avg True Cascade Size', fontweight='bold')
-    cbar2 = plt.colorbar(im2, ax=axes[0, 1])
-    cbar2.set_label('Fraction of network', fontweight='bold')
-    
-    # Plot 3: Average Utility
-    im3 = axes[1, 0].imshow(map_utility, origin='lower', aspect='auto', extent=extent, 
-                            cmap='RdBu', vmin=-5, vmax=5)
-    axes[1, 0].set_title('Avg Agent Utility per Step', fontweight='bold')
-    axes[1, 0].set_xlabel('Cost (C)', fontweight='bold')
-    axes[1, 0].set_ylabel('Prevalence (P_global)', fontweight='bold')
-    cbar3 = plt.colorbar(im3, ax=axes[1, 0])
-    cbar3.set_label('Utility', fontweight='bold')
+    color = 'tab:red'
+    ax1.set_xlabel('Verification Cost (C)')
+    ax1.set_ylabel('Avg. Fake Cascade Size (% of Network)', color=color)
+    ax1.plot(costs, avg_cascade_sizes, color=color, marker='o', label='Cascade Size')
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True, alpha=0.3)
 
-    # Plot 4: Verification Rate
-    im4 = axes[1, 1].imshow(map_verification_rate, origin='lower', aspect='auto', extent=extent, 
-                            cmap='viridis', vmin=0, vmax=1)
-    axes[1, 1].set_title('Verification Rate', fontweight='bold')
-    axes[1, 1].set_xlabel('Cost (C)', fontweight='bold')
-    cbar4 = plt.colorbar(im4, ax=axes[1, 1])
-    cbar4.set_label('Fraction verified', fontweight='bold')
-    
-    plt.tight_layout(rect=[0, 0, 1, 0.97])    
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    color = 'tab:blue'
+    ax2.set_ylabel('Verification Ratio', color=color)  # we already handled the x-label with ax1
+    ax2.plot(costs, verification_ratios, color=color, linestyle='--', label='Verification Rate')
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    plt.title('Phase Transition: Effect of Verification Cost on Deepfake Spread')
+    fig.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    run_resilience_experiment()
+    run_experiment()
