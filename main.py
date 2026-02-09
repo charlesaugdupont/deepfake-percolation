@@ -4,78 +4,91 @@ from tqdm import tqdm
 from config import SimConfig
 from model import DeepfakePercolationModel
 
-def run_experiment():
-    print("Initializing Deepfake Percolation Experiment...")
+def run_resilience_experiment():
+    print("Running Sequential Mixed-Stream Experiment...")
     
-    # 1. Define Sweep Range for Cost (C)
-    # We expect a transition: Low Cost = High Verification = Low Spread
-    # High Cost = Low Verification = High Spread
-    costs = np.linspace(0.0, 10.0, 20)
+    # 1. Sweep Parameters
+    costs = np.linspace(0, 10, 15)
+    prevalences = np.linspace(0.1, 0.9, 15)
     
-    avg_cascade_sizes = []
-    verification_ratios = []
+    # Storage for 3 Heatmaps
+    map_fake_size = np.zeros((len(prevalences), len(costs)))
+    map_true_size = np.zeros((len(prevalences), len(costs)))
+    map_utility   = np.zeros((len(prevalences), len(costs)))
     
-    # Run simulation for each Cost value
-    for cost in tqdm(costs, desc="Simulating Cost Regimes"):
-        
-        # Create Config
-        cfg = SimConfig(
-            num_agents=500,
-            C=cost,
-            global_prevalence=0.5, # High danger environment
-            network_type='watts_strogatz',
-            ws_k=6,
-            ws_p=0.1
-        )
-        
-        # Rebuild model fresh for each parameter point
-        # (Or you could keep the same network and just reset agents)
-        model = DeepfakePercolationModel(cfg)
-        
-        # Run M cascades (Monte Carlo)
-        num_cascades = 50
-        sizes = []
-        verifications = []
-        
-        for _ in range(num_cascades):
-            # Pick a random seed
-            seed = np.random.randint(0, cfg.num_agents)
+    # Simulation Parameters
+    NUM_STEPS = 50 # Number of cascades per run (Time evolution)
+    
+    for i, p_val in enumerate(tqdm(prevalences, desc="Prevalence")):
+        for j, c_val in enumerate(costs):
             
-            # Inject a FAKE news item
-            # We want to see how far a FAKE item travels
-            stats = model.run_cascade(source_node=seed, is_ground_truth_fake=True)
+            # Setup Model
+            cfg = SimConfig(
+                num_agents=200, 
+                C=c_val, 
+                global_prevalence=p_val, # This now controls the INJECTION ratio
+                network_type='watts_strogatz'
+            )
+            model = DeepfakePercolationModel(cfg)
             
-            # Record normalized cascade size
-            sizes.append(stats['total_shared'] / cfg.num_agents)
+            # Trackers for this specific run
+            fake_sizes = []
+            true_sizes = []
             
-            # Record verification ratio (verifications / reach)
-            if stats['total_reached'] > 0:
-                verifications.append(stats['total_verified'] / stats['total_reached'])
-            else:
-                verifications.append(0)
+            # --- SEQUENTIAL LOOP ---
+            for _ in range(NUM_STEPS):
+                # 1. Decide: Is this injection True or Fake?
+                # We use the environment's prevalence to decide what hits the network
+                is_fake = np.random.random() < p_val
                 
-        avg_cascade_sizes.append(np.mean(sizes))
-        verification_ratios.append(np.mean(verifications))
-        
-    # --- Plotting Results ---
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+                seed = np.random.randint(0, cfg.num_agents)
+                stats = model.run_cascade(seed, is_ground_truth_fake=is_fake)
+                
+                norm_size = stats['total_shared'] / cfg.num_agents
+                
+                if is_fake:
+                    fake_sizes.append(norm_size)
+                else:
+                    true_sizes.append(norm_size)
+            
+            # --- AGGREGATE RESULTS ---
+            # We take the mean of the sizes. 
+            # Note: If no true news was injected (rare), handle div/0 or empty
+            map_fake_size[i, j] = np.mean(fake_sizes) if fake_sizes else 0
+            map_true_size[i, j] = np.mean(true_sizes) if true_sizes else 0
+            
+            # Calculate Average Utility per Agent
+            total_util = sum(d['utility'] for n, d in model.G.nodes(data=True))
+            avg_util = total_util / (cfg.num_agents * NUM_STEPS)
+            map_utility[i, j] = avg_util
 
-    color = 'tab:red'
-    ax1.set_xlabel('Verification Cost (C)')
-    ax1.set_ylabel('Avg. Fake Cascade Size (% of Network)', color=color)
-    ax1.plot(costs, avg_cascade_sizes, color=color, marker='o', label='Cascade Size')
-    ax1.tick_params(axis='y', labelcolor=color)
-    ax1.grid(True, alpha=0.3)
-
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    color = 'tab:blue'
-    ax2.set_ylabel('Verification Ratio', color=color)  # we already handled the x-label with ax1
-    ax2.plot(costs, verification_ratios, color=color, linestyle='--', label='Verification Rate')
-    ax2.tick_params(axis='y', labelcolor=color)
-
-    plt.title('Phase Transition: Effect of Verification Cost on Deepfake Spread')
-    fig.tight_layout()
+    # --- PLOTTING (3 Plots) ---
+    _, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    extent = [0, 10, 0.1, 0.9]
+    
+    # Plot 1: Fake News Spread
+    im1 = axes[0].imshow(map_fake_size, origin='lower', aspect='auto', extent=extent, cmap='Reds')
+    axes[0].set_title('Avg Fake Cascade Size')
+    axes[0].set_xlabel('Cost (C)')
+    axes[0].set_ylabel('Prevalence (P_global)')
+    plt.colorbar(im1, ax=axes[0])
+    
+    # Plot 2: True News Spread
+    im2 = axes[1].imshow(map_true_size, origin='lower', aspect='auto', extent=extent, cmap='Greens')
+    axes[1].set_title('Avg True Cascade Size')
+    axes[1].set_xlabel('Cost (C)')
+    plt.colorbar(im2, ax=axes[1])
+    
+    # Plot 3: Average Utility
+    # Use a diverging colormap (Red = Negative, White = Zero, Blue = Positive)
+    im3 = axes[2].imshow(map_utility, origin='lower', aspect='auto', extent=extent, cmap='RdBu', vmin=-5, vmax=5)
+    axes[2].set_title('Avg Agent Utility')
+    axes[2].set_xlabel('Cost (C)')
+    plt.colorbar(im3, ax=axes[2], label='Utility per Step')
+    
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    run_experiment()
+    run_resilience_experiment()

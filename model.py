@@ -111,43 +111,26 @@ class DeepfakePercolationModel:
             
             # 3. Make Decision
             action = AgentLogic.make_decision(p_fake, self.cfg)
-            
+            detected_as_fake = False
             final_action_share = False
             
-            if action == 'DISCARD':
-                stats['total_discarded'] += 1
-                
-            elif action == 'SHARE':
-                # Sharing without verification (Gambling)
-                final_action_share = True
-                
-            elif action == 'VERIFY':
+            if action == 'VERIFY':
                 stats['total_verified'] += 1
-                
-                # Perform Noisy Verification
                 detected_as_fake = AgentLogic.perform_verification(is_ground_truth_fake, self.cfg)
-                
-                # Update Trust based on DETECTION (not necessarily ground truth)
                 self.update_trust(current, sender, detected_as_fake)
                 
                 if detected_as_fake:
-                    # Agent thinks it's fake -> Debunk & Discard
-                    if is_ground_truth_fake:
-                        stats['detected_fakes'] += 1
-                    else:
-                        stats['false_positives'] += 1 # Oops, debunked real news
-                    
-                    # Do not share
-                    final_action_share = False 
-                    
+                    final_action_share = False
                 else:
-                    # Agent thinks it's true -> Share
-                    if is_ground_truth_fake:
-                        stats['false_negatives'] += 1 # Oops, verifying let a fake through
-                    
                     final_action_share = True
-                    # Update trust (Positive reinforcement for sender)
-                    # self.update_trust(current, sender, False) -> Already handled above
+            
+            elif action == 'SHARE':
+                final_action_share = True
+                
+            elif action == 'DISCARD':
+                final_action_share = False
+
+            self.apply_payoff(current, action, is_ground_truth_fake, detected_as_fake)
             
             # 4. Propagation
             if final_action_share:
@@ -158,3 +141,42 @@ class DeepfakePercolationModel:
                         queue.append((neighbor, current))
                         
         return stats
+    
+    def apply_payoff(self, agent_id: int, action: str, is_ground_truth_fake: bool, detected_as_fake: bool):
+        """
+        Updates the cumulative utility of an agent based on the OUTCOME of their action.
+        """
+        payoff = 0.0
+        cfg = self.cfg
+        
+        if action == 'DISCARD':
+            payoff = 0.0
+            
+        elif action == 'VERIFY':
+            payoff -= cfg.C # Always pay the cost
+            
+            # Now, what happened after verification?
+            if detected_as_fake:
+                # Agent thought it was fake.
+                if is_ground_truth_fake:
+                    payoff += cfg.D # Successful Debunk
+                else:
+                    payoff += 0 # False Positive (Debunked the truth). No reward, maybe penalty?
+            else:
+                # Agent thought it was true and Shared it.
+                if is_ground_truth_fake:
+                    payoff -= cfg.L # False Negative (Shared a fake after checking!)
+                else:
+                    payoff += cfg.R # Shared the Truth
+                    
+        elif action == 'SHARE':
+            # Blind sharing
+            if is_ground_truth_fake:
+                payoff -= cfg.L # Ouch, shared a lie
+            else:
+                payoff += cfg.R # Shared the truth
+                
+        # Update Agent State
+        if 'utility' not in self.G.nodes[agent_id]:
+            self.G.nodes[agent_id]['utility'] = 0.0
+        self.G.nodes[agent_id]['utility'] += payoff
