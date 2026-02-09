@@ -12,7 +12,9 @@ class DeepfakePercolationModel:
 
     def _build_network(self):
         if self.cfg.network_type == 'watts_strogatz':
-            return nx.watts_strogatz_graph(self.cfg.num_agents, self.cfg.ws_k, self.cfg.ws_p)
+            return nx.watts_strogatz_graph(
+                self.cfg.num_agents, self.cfg.ws_k, self.cfg.ws_p
+            )
         return nx.barabasi_albert_graph(self.cfg.num_agents, self.cfg.ba_m)
 
     def _initialize_agent_states(self):
@@ -49,22 +51,30 @@ class DeepfakePercolationModel:
 
         stats = {
             'total_shared': 0,
-            'utility': 0.0
+            'utility': 0.0,
+            'num_received': 0,     # decision opportunities
+            'num_verified': 0      # VERIFY actions taken
         }
 
         while queue:
             current, sender = queue.popleft()
+            stats['num_received'] += 1
 
             trust = self.get_trust(current, sender)
             w = self.G.nodes[current]['w']
-            p_fake = AgentLogic.estimate_p_fake(trust['alpha'], trust['beta'], w, self.cfg)
+            p_fake = AgentLogic.estimate_p_fake(
+                trust['alpha'], trust['beta'], w, self.cfg
+            )
 
             action = AgentLogic.make_decision(p_fake, self.cfg)
             detected_as_fake = False
             shared = False
 
             if action == 'VERIFY':
-                detected_as_fake = AgentLogic.perform_verification(is_ground_truth_fake, self.cfg)
+                stats['num_verified'] += 1
+                detected_as_fake = AgentLogic.perform_verification(
+                    is_ground_truth_fake, self.cfg
+                )
                 sender_correct = (detected_as_fake == is_ground_truth_fake)
                 self.update_trust(current, sender, sender_correct)
                 shared = not detected_as_fake
