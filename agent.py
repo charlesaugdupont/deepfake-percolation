@@ -14,16 +14,13 @@ class AgentLogic:
         Combines Local Bayesian estimate with Global prior.
         """
         # 1. Local Estimate (Mean of Beta Distribution)
-        # Avoid division by zero with small epsilon if needed, 
-        # though priors usually prevent this.
         total_evidence = alpha + beta
         if total_evidence == 0:
-            p_local = 0.5 # Maximum entropy if no data (shouldn't happen with priors)
+            p_local = 0.5
         else:
             p_local = beta / total_evidence
             
         # 2. Weighted combination with Global Prevalence
-        # p = (1-w)*Local + w*Global
         p_subjective = (1 - w) * p_local + w * config.global_prevalence
         
         return p_subjective
@@ -45,7 +42,7 @@ class AgentLogic:
     @staticmethod
     def make_cpt_decision(p_fake: float, item_cost: float, config: SimConfig) -> str:
         """Calculates CPT value for each choice."""
-        # Derived L and D
+        # Derived L and D (actual payoff values, not just ratios)
         L = config.R * config.loss_aversion_ratio
         D = config.R * config.debunking_premium_ratio
         
@@ -61,7 +58,6 @@ class AgentLogic:
         val_discard = 0.0
 
         # 3. CPT Value of Verifying
-        # Here, the cost C is a certain loss, felt immediately.
         val_verify = AgentLogic._cpt_value_function(-item_cost, config) + \
                      (w_p_true * AgentLogic._cpt_value_function(config.R, config)) + \
                      (w_p_fake * AgentLogic._cpt_value_function(D, config))
@@ -76,14 +72,12 @@ class AgentLogic:
         Returns the DETECTED label (True = Detected as Fake, False = Detected as Real).
         """
         if is_actually_fake:
-            # It is fake. Do we catch it?
             if np.random.random() < config.true_positive_rate:
-                return True # Correctly identified as Fake
+                return True  # Correctly identified as Fake
             else:
-                return False # Missed it (False Negative)
+                return False  # Missed it (False Negative)
         else:
-            # It is real. Do we accidentally flag it?
             if np.random.random() < config.true_negative_rate:
-                return False # Correctly identified as Real
+                return False  # Correctly identified as Real
             else:
-                return True # False Positive (Flagged real news as fake)
+                return True  # False Positive

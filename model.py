@@ -28,28 +28,18 @@ class DeepfakePercolationModel:
 
     def _initialize_agent_states(self):
         """
-        Sets up initial w (uncertainty weights) for nodes
-        and alpha/beta (trust priors) for edges.
+        Sets up initial trust priors for edges.
+        SIMPLIFIED: All agents have same fixed w (no variance).
         """
-        # 1. Node Initialization (w)
+        # 1. Node Initialization - SIMPLIFIED
         for node in self.G.nodes():
-            # Draw w from a bounded normal or beta distribution
-            w = np.random.normal(self.cfg.w_mean, self.cfg.w_std)
-            w = np.clip(w, 0.0, 1.0)
-            self.G.nodes[node]['w'] = w
-            self.G.nodes[node]['reputation'] = 0.0
+            self.G.nodes[node]['utility'] = 0.0
             
         # 2. Edge Initialization (Trust Priors)
-        # alpha = verified TRUE count, beta = verified FAKE count
         alpha_init = self.cfg.initial_trust_prior * self.cfg.baseline_trust
         beta_init  = self.cfg.initial_trust_prior * (1.0 - self.cfg.baseline_trust)
         
         for u, v in self.G.edges():
-            # NetworkX edges are undirected, but trust is directed.
-            # We must store attributes for both directions: u->v and v->u.
-            # We'll use a dictionary on the edge to store 'trust_data'.
-            # key: source_node_id, value: {'alpha': ..., 'beta': ...}
-            
             self.G[u][v]['trust'] = {
                 u: {'alpha': alpha_init, 'beta': beta_init},
                 v: {'alpha': alpha_init, 'beta': beta_init}
@@ -57,7 +47,6 @@ class DeepfakePercolationModel:
             
     def get_trust_scores(self, observer: int, target: int):
         """Helper to get alpha/beta that 'observer' has for 'target'."""
-        # In undirected graph G[u][v], we stored a dict keyed by the *observer*
         return self.G[observer][target]['trust'][observer]
 
     def update_trust(self, observer: int, target: int, evidence_is_fake: bool):
@@ -68,68 +57,47 @@ class DeepfakePercolationModel:
         else:
             scores['alpha'] += 1
 
-    def apply_payoff(self, agent_id: int, action: str, is_ground_truth_fake: bool, detected_as_fake: bool):
-        """
-        Updates the cumulative utility of an agent based on the OUTCOME of their action.
-        """
+    def apply_payoff(self, agent_id: int, action: str, is_ground_truth_fake: bool, 
+                     detected_as_fake: bool, item_cost: float):
+        """Updates the cumulative utility of an agent based on the OUTCOME of their action."""
         payoff = 0.0
         cfg = self.cfg
+        
+        # Compute actual payoff values
+        L = cfg.R * cfg.loss_aversion_ratio
+        D = cfg.R * cfg.debunking_premium_ratio
         
         if action == 'DISCARD':
             payoff = 0.0
             
         elif action == 'VERIFY':
-            payoff -= cfg.C # Always pay the cost
+            payoff -= item_cost
             
-            # Now, what happened after verification?
             if detected_as_fake:
-                # Agent thought it was fake.
                 if is_ground_truth_fake:
-                    payoff += cfg.debunking_premium_ratio # Successful Debunk
+                    payoff += D  # Successful Debunk
                 else:
-                    payoff += 0 # False Positive (Debunked the truth). No reward, maybe penalty?
+                    payoff += 0  # False Positive
             else:
-                # Agent thought it was true and Shared it.
                 if is_ground_truth_fake:
-                    payoff -= cfg.loss_aversion_ratio # False Negative (Shared a fake after checking!)
+                    payoff -= L  # False Negative
                 else:
-                    payoff += cfg.R # Shared the Truth
+                    payoff += cfg.R  # True Negative
                     
         elif action == 'SHARE':
-            # Blind sharing
             if is_ground_truth_fake:
-                payoff -= cfg.loss_aversion_ratio # Ouch, shared a lie
-                self.update_w(agent_id) # Increase cynicism after being duped; trust in social signals is damaged
+                payoff -= L
             else:
-                payoff += cfg.R # Shared the truth
+                payoff += cfg.R
                 
-        # Update Agent State
-        if 'utility' not in self.G.nodes[agent_id]:
-            self.G.nodes[agent_id]['utility'] = 0.0
         self.G.nodes[agent_id]['utility'] += payoff
-
-    def update_w(self, agent_id: int):
-        """
-        Increases an agent's cynicism (w) after being penalized for a mistake.
-        This represents a 'loss of faith' in social signals.
-        """
-        current_w = self.G.nodes[agent_id]['w']
-        
-        # Simple additive learning rule
-        new_w = current_w + self.cfg.eta_w_update_rate
-        
-        # Clamp to ensure w stays within [0, 1]
-        self.G.nodes[agent_id]['w'] = min(1.0, new_w)
 
     def run_cascade(self, source_node: int, is_ground_truth_fake: bool):
         """
         Simulates a single piece of news spreading from source_node.
         Returns statistics about the cascade.
         """
-        # Queue for propagation: (current_node, sender_node)
         queue = collections.deque()
-        
-        # Track who has seen this specific item to prevent cycles
         received_set = set()
         
         # Initial Injection
@@ -139,28 +107,31 @@ class DeepfakePercolationModel:
             received_set.add(neighbor)
             
         stats = {
-            'total_reached': 1, # Source
+            'total_reached': 1,
             'total_shared': 0,
             'total_verified': 0,
             'total_discarded': 0,
-            'detected_fakes': 0, # Successful debunks
-            'false_positives': 0, # True news labeled fake
-            'false_negatives': 0, # Fake news labeled true
         }
         
         while queue:
             current, sender = queue.popleft()
             stats['total_reached'] += 1
             
-            # 1. Retrieve State
+            # 1. Get trust in sender
             scores = self.get_trust_scores(current, sender)
-            w = self.G.nodes[current]['w']
             
-            # 2. Form Belief
-            p_fake = AgentLogic.estimate_p_fake(scores['alpha'], scores['beta'], w, self.cfg)
+            # 2. Form belief - SIMPLIFIED: use fixed w from config
+            p_fake = AgentLogic.estimate_p_fake(
+                scores['alpha'], 
+                scores['beta'], 
+                self.cfg.w,  # Fixed for all agents
+                self.cfg
+            )
 
-            # 3. Make Decision
-            item_cost = np.random.lognormal(mean=self.cfg.C_mean, sigma=self.cfg.C_std_dev/ self.cfg.C_mean)
+            # 3. Fixed cost
+            item_cost = self.cfg.C
+            
+            # 4. Make Decision
             action = AgentLogic.make_cpt_decision(p_fake, item_cost, self.cfg)
             final_action_share = False
             detected_as_fake = False
@@ -172,15 +143,21 @@ class DeepfakePercolationModel:
                 
                 if detected_as_fake:
                     final_action_share = False
+                    stats['total_discarded'] += 1
                 else:
                     final_action_share = True
             
             elif action == 'SHARE':
                 final_action_share = True
+                
+            elif action == 'DISCARD':
+                final_action_share = False
+                stats['total_discarded'] += 1
 
-            self.apply_payoff(current, action, is_ground_truth_fake, detected_as_fake)
+            # 5. Apply payoff
+            self.apply_payoff(current, action, is_ground_truth_fake, detected_as_fake, item_cost)
             
-            # 4. Propagation
+            # 6. Propagation
             if final_action_share:
                 stats['total_shared'] += 1
                 for neighbor in self.G.neighbors(current):
