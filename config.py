@@ -11,7 +11,7 @@ class SimConfig:
     # If trust < threshold, break link
     rewire_trust_threshold: float = 0.3 
     # How often to check for rewiring (every N cascades)
-    rewiring_interval: int = 10 
+    rewiring_interval: int = 1 
     
     # --- Simulation ---
     # Global probability a generated item is fake
