@@ -6,12 +6,13 @@ from config import SimConfig
 from simulation import Simulation
 
 def run_heatmap_experiment():
+    # Grid Settings
     RESOLUTION = 20           
-    NUM_TRIALS = 15          
-    CASCADES_PER_TRIAL = 50   
+    NUM_TRIALS = 20           # Fresh networks per pixel
+    CASCADES_PER_TRIAL = 50   # Longer episodes to allow rewiring to happen
     
-    costs = np.linspace(0.5, 6.0, RESOLUTION) 
-    prevalences = np.linspace(0.1, 0.9, RESOLUTION) 
+    costs = np.linspace(0.0, 4.0, RESOLUTION) 
+    prevalences = np.linspace(0.05, 0.95, RESOLUTION) 
     
     grid_fake_size = np.zeros((RESOLUTION, RESOLUTION))
     grid_true_size = np.zeros((RESOLUTION, RESOLUTION))
@@ -31,14 +32,18 @@ def run_heatmap_experiment():
             
             for _ in range(NUM_TRIALS):
                 cfg = SimConfig(
-                    num_agents=250,
+                    num_agents=200,
                     num_connections=2,
                     verification_cost=cost,
                     global_fake_prob=prev,
                     rep_gain=1.0,
                     rep_loss=2.0,
-                    rep_debunk=0.5, # Note: Maybe increase this to 1.0 later?
-                    self_interest_weight=0.7
+                    rep_debunk=0.5,
+                    self_interest_weight=0.7,
+                    detection_accuracy=0.9,
+                    enable_rewiring=True,
+                    rewire_trust_threshold=0.25,
+                    rewiring_interval=10
                 )
                 
                 sim = Simulation(cfg)
@@ -67,7 +72,6 @@ def run_heatmap_experiment():
 
 def plot_results(costs, prevalences, fake, true, verify, welfare):
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-    
     extent = [costs.min(), costs.max(), prevalences.min(), prevalences.max()]
     origin = 'lower'
 
@@ -95,19 +99,16 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax3.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im3, ax=ax3)
 
-    # 4. Social Welfare (FIXED COLOR SCALE)
+    # 4. Social Welfare (Diverging)
     ax4 = axes[1, 1]
-    
-    # Calculate min and max
     vmin, vmax = welfare.min(), welfare.max()
+    # Handle cases where all values are positive or all negative to avoid norm errors
+    if vmin >= 0: vmin = -0.1
+    if vmax <= 0: vmax = 0.1
     
-    # Create the Norm: Center=0, Vmin=min_data, Vmax=max_data
-    # Use TwoSlopeNorm (available in matplotlib 3.2+)
     norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=0., vmax=vmax)
-    
     im4 = ax4.imshow(welfare, extent=extent, origin=origin, aspect='auto', 
                      cmap='RdBu', norm=norm)
-                     
     ax4.set_title(r'Avg Social Welfare (Utility)')
     ax4.set_xlabel(r'Verification Cost ($C_v$)')
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')

@@ -3,30 +3,37 @@ from dataclasses import dataclass
 @dataclass
 class SimConfig:
     # --- Network ---
-    num_agents: int = 500
+    num_agents: int = 300
     num_connections: int = 2
     
-    # --- Simulation ---
-    num_cascades: int = 100
+    # --- Rewiring ---
+    enable_rewiring: bool = False
+    # If trust < threshold, break link
+    rewire_trust_threshold: float = 0.3 
+    # How often to check for rewiring (every N cascades)
+    rewiring_interval: int = 10 
     
-    # --- Information ---
-    global_fake_prob: float = 0.5  # Actual probability a new item is fake
+    # --- Simulation ---
+    # Global probability a generated item is fake
+    global_fake_prob: float = 0.5  
     
     # --- Payoffs & Costs ---
-    verification_cost: float = 0.5  # c_v
+    verification_cost: float = 0.5
     
-    rep_gain: float = 1.0       # g: Gain for sharing Truth
-    rep_loss: float = 2.0       # l: Loss for sharing Fake
-    rep_debunk: float = 1.0     # d: Gain for Debunking Fake (New!)
+    rep_gain: float = 1.0       # Gain for sharing Truth
+    rep_loss: float = 2.0       # Loss for sharing Fake
+    rep_debunk: float = 0.5     # Gain for Debunking
+    
+    # --- Detection Technology (New!) ---
+    # Probability of correctly identifying a Fake as Fake.
+    # 1.0 = Perfect, 0.9 = 10% chance of False Negative (missing the fake)
+    detection_accuracy: float = 0.9 
     
     # --- Agent Psychology ---
-    # w: 1.0 = Pure Reputation (Selfish), 0.0 = Pure Truth (Altruist)
-    self_interest_weight: float = 0.7
+    # 1.0 = Pure Self-Interest, 0.0 = Pure Altruism
+    self_interest_weight: float = 0.7 
     
     # --- Belief Priors ---
-    # Initial belief about neighbor reliability (Beta distribution)
     prior_alpha: float = 1.0 
     prior_beta: float = 0.2  # Starts slightly trusting
-    
-    # Initial belief about global fake rate
     initial_fake_belief: float = 0.3

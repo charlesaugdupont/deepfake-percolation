@@ -1,4 +1,3 @@
-import numpy as np
 from config import SimConfig
 
 class AgentLogic:
@@ -12,61 +11,63 @@ class AgentLogic:
         reliability: float, 
         global_fake_belief: float
     ) -> float:
-        """
-        Bayesian update:
-        P(True | Received) = (P(Received | True) * P(True)) / P(Received)
-        Assuming reliable neighbor sends True, unreliable sends random/noise.
-        Simplified strictly for this model:
-        """
+        """Bayesian update based on who sent the item."""
         p_true_global = 1.0 - global_fake_belief
         
         numerator = reliability * p_true_global
         denominator = (reliability * p_true_global) + ((1 - reliability) * global_fake_belief)
         
-        # Avoid division by zero
         if denominator == 0: return 0.5
         return numerator / denominator
 
     @staticmethod
     def decide(p_true: float, reach: int, cfg: SimConfig):
         """
-        Calculates U(Share), U(Discard), U(Verify) based on Weighted Additive Utility.
-        Returns: Action string and Estimated Utility
+        Calculates EU for Share, Discard, Verify.
+        Includes risk assessment for Noisy Verification.
         """
         w = cfg.self_interest_weight
         k = reach
+        alpha = cfg.detection_accuracy
         
-        # 1. Utility of DISCARD
+        # --- Pre-calculate Utility of Outcomes ---
+        
+        # 1. We Share, and it is TRUE
+        u_share_if_true = w * (cfg.rep_gain * k) + (1 - w) * k
+        
+        # 2. We Share, and it is FAKE
+        u_share_if_fake = w * (-cfg.rep_loss * k) + (1 - w) * (-k)
+        
+        # 3. We Debunk (Only happens if we find a Fake)
+        u_debunk = w * (cfg.rep_debunk * k) + (1 - w) * k
+
+        # --- Evaluate Actions ---
+        
+        # Action: DISCARD
         u_discard = 0.0
         
-        # 2. Utility of SHARE (Immediate)
-        # Rep component: p * Gain - (1-p) * Loss
-        u_share_rep = (p_true * cfg.rep_gain * k) - ((1 - p_true) * cfg.rep_loss * k)
-        # Global component: p * Reach - (1-p) * Reach (Simple: Truth helps, Fake hurts)
-        u_share_global = (p_true * k) - ((1 - p_true) * k)
+        # Action: SHARE (Blindly)
+        u_share = (p_true * u_share_if_true) + ((1 - p_true) * u_share_if_fake)
         
-        u_share = w * u_share_rep + (1 - w) * u_share_global
+        # Action: VERIFY (Noisy!)
+        # Cost is paid regardless
+        u_verify_cost = -cfg.verification_cost
         
-        # 3. Utility of VERIFY
-        # Cost is paid upfront
-        # If True (prob p_true): We will Share.
-        # If Fake (prob 1-p_true): We will Debunk.
+        # Branch A: Item is actually TRUE (prob p_true)
+        # We verify. Detection is assumed symmetric or we only care about detecting fakes.
+        # Usually, detecting Truth is easier. Let's assume we correctly ID truth.
+        # Result: We see Truth -> We Share.
+        exp_u_given_true = u_share_if_true
         
-        # Value given it turns out TRUE (We share)
-        val_if_true_rep = cfg.rep_gain * k
-        val_if_true_glob = k
-        u_post_verify_true = w * val_if_true_rep + (1 - w) * val_if_true_glob
+        # Branch B: Item is actually FAKE (prob 1-p_true)
+        # We verify. Two sub-outcomes:
+        #   1. Success (prob alpha): We detect Fake -> Debunk.
+        #   2. Failure (prob 1-alpha): We think it's True -> Share -> GET PUNISHED.
+        exp_u_given_fake = (alpha * u_debunk) + ((1 - alpha) * u_share_if_fake)
         
-        # Value given it turns out FAKE (We debunk)
-        val_if_fake_rep = cfg.rep_debunk * k
-        val_if_fake_glob = k # We saved them!
-        u_post_verify_fake = w * val_if_fake_rep + (1 - w) * val_if_fake_glob
+        u_verify = u_verify_cost + (p_true * exp_u_given_true) + ((1 - p_true) * exp_u_given_fake)
         
-        u_verify = -cfg.verification_cost + \
-                   (p_true * u_post_verify_true) + \
-                   ((1 - p_true) * u_post_verify_fake)
-        
-        # Maximize
+        # --- Maximize ---
         options = {'DISCARD': u_discard, 'SHARE': u_share, 'VERIFY': u_verify}
         best_action = max(options, key=options.get)
         
