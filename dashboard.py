@@ -89,26 +89,23 @@ if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
 
 sim = st.session_state.sim
 
+if "layout" not in st.session_state:
+    st.session_state.layout = nx.spring_layout(sim.net.G, seed=42)
+
 
 # ============================================================
 # CONTROLS
 # ============================================================
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2 = st.columns(2)
 
-if c1.button("▶ Play"):
-    st.session_state.running = True
-
-if c2.button("⏸ Pause"):
-    st.session_state.running = False
-
-if c3.button("⏭ Step"):
+if c1.button("⏭ Step"):
     st.session_state.running = False
     run_step = True
 else:
     run_step = False
 
-if c4.button("🔄 Reset"):
+if c2.button("🔄 Reset"):
     st.session_state.sim = Simulation(cfg)
     st.session_state.cascade_id = 0
     st.session_state.verify_series = []
@@ -132,13 +129,21 @@ def run_single_step():
     stats = sim.run_single_cascade(st.session_state.cascade_id)
     st.session_state.cascade_id += 1
 
-    # --- Correct Verification Rate ---
-    total_decisions = stats["verifications"] + stats["shares"]
+    # --- Verification Rate ---
     verify_rate = (
-        stats["verifications"] / total_decisions
-        if total_decisions > 0 else 0
+        stats["verifications"] / stats["receivers"]
+        if stats["receivers"] > 0 else 0
     )
-    st.session_state.verify_series.append(verify_rate)
+
+    # --- Running average ---
+    if len(st.session_state.verify_series) == 0:
+        running_avg = verify_rate
+    else:
+        prev_avg = st.session_state.verify_series[-1]
+        t = st.session_state.cascade_id  # already incremented above
+        running_avg = ((prev_avg * (t - 1)) + verify_rate) / t
+
+    st.session_state.verify_series.append(running_avg)
 
     # --- Cascade Size ---
     cascade_size = stats["shares"] / cfg.num_agents
@@ -193,19 +198,19 @@ left, right = st.columns([3, 2])
 with left:
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
-    axes[0, 0].plot(st.session_state.verify_series)
+    axes[0, 0].plot(st.session_state.verify_series, linewidth=2.5)
     axes[0, 0].set_title("Verification Rate", fontsize=16)
     axes[0, 0].set_ylim(0, 1)
 
-    axes[0, 1].plot(st.session_state.true_series)
+    axes[0, 1].plot(st.session_state.true_series, linewidth=2.5)
     axes[0, 1].set_title("True Cascade Size (Running Avg)", fontsize=16)
     axes[0, 1].set_ylim(0, 1)
 
-    axes[1, 0].plot(st.session_state.fake_series)
+    axes[1, 0].plot(st.session_state.fake_series, linewidth=2.5)
     axes[1, 0].set_title("False Cascade Size (Running Avg)", fontsize=16)
     axes[1, 0].set_ylim(0, 1)
 
-    axes[1, 1].plot(st.session_state.welfare_series)
+    axes[1, 1].plot(st.session_state.welfare_series, linewidth=2.5)
     axes[1, 1].set_title("Average Social Welfare", fontsize=16)
 
     for ax in axes.flat:
@@ -224,41 +229,30 @@ with right:
     fig_net, ax_net = plt.subplots(figsize=(10, 10))
 
     G = sim.net.G
-    pos = nx.spring_layout(G, seed=42)
+    pos = st.session_state.layout
 
     reputations = np.array([
         G.nodes[n]["reputation"] for n in G.nodes()
     ])
 
-    vmin = reputations.min()
-    vmax = reputations.max()
-
-    # ---- Robust normalization ----
-    if vmin == vmax:
-        vmin -= 1
-        vmax += 1
-
-    if vmin < 0 and vmax > 0:
-        # symmetric around zero
-        max_abs = max(abs(vmin), abs(vmax))
-        vmin, vmax = -max_abs, max_abs
-
-    norm = plt.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.cm.RdBu
-
-    node_colors = cmap(norm(reputations))
+    scale = np.std(reputations) + 1e-6
+    compressed = np.tanh(reputations / (2 * scale))
+    norm = plt.Normalize(vmin=-1, vmax=1)
+    node_colors = plt.cm.RdBu(norm(compressed))
 
     nodes = nx.draw_networkx_nodes(
         G,
         pos,
         node_color=node_colors,
+        edgecolors="black",
+        linewidths=0.5,
         node_size=60,
         ax=ax_net
     )
 
     nx.draw_networkx_edges(G, pos, alpha=0.2, ax=ax_net)
 
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.RdBu)
     sm.set_array([])
     plt.colorbar(sm, ax=ax_net, shrink=0.8)
 
@@ -271,6 +265,6 @@ with right:
 # PROGRESS
 # ============================================================
 
-max_cascades = 200
+max_cascades = 50
 progress = st.session_state.cascade_id / max_cascades
 st.progress(min(progress, 1.0))
