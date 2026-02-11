@@ -23,10 +23,6 @@ class SimConfig:
     # Probability of correctly identifying a Fake as Fake.
     verification_accuracy: float = 0.95
     
-    # --- Agent Psychology ---
-    # 0.0 = Pure Altruism ; 1.0 = Pure Self-Interest
-    self_interest_weight: float = 0.5
-    
     # --- Belief Priors ---
     prior_alpha: float = 1.0 
     prior_beta: float = 0.2  # Starts slightly trusting
