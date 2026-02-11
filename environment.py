@@ -57,51 +57,56 @@ class SocialNetwork:
 
     def rewire_network(self):
         """
-        Dynamic Topology:
-        1. Identify weak links (trust < threshold).
-        2. Remove them.
-        3. Create new random links to maintain density.
+        Rewire edges whose trust falls below the threshold.
+        Each removed undirected edge produces exactly one reconnection
+        attempt per endpoint. Prevents duplicate removals and degree bias.
         """
         edges_to_remove = []
-        nodes_seeking_partners = []
 
-        # 1. Identify Cuts
-        for u in self.G.nodes():
-            neighbors = list(self.G.neighbors(u))
-            for v in neighbors:
-                # Undirected graph: check u's trust in v
-                trust_data = self.G.nodes[u]['neighbor_trust'].get(v)
-                if not trust_data: continue
+        # --------------------------------------------------
+        # 1️⃣ Identify weak edges (avoid double counting)
+        # --------------------------------------------------
+        for u, v in self.G.edges():
+            trust_uv = self.trust[u][v]
+            trust_vu = self.trust[v][u]
 
-                trust_score = AgentLogic.get_neighbor_reliability(trust_data['alpha'], trust_data['beta'])
-                
-                if trust_score < self.cfg.rewire_trust_threshold:
-                    # Mark for removal. (We'll handle the undirected duplicate edge naturally)
-                    if self.G.has_edge(u, v):
-                        edges_to_remove.append((u, v))
-                        nodes_seeking_partners.append(u)
+            # You can choose asymmetric or average trust rule
+            avg_trust = 0.5 * (trust_uv + trust_vu)
 
-        # 2. Execute Cuts
-        unique_cuts = set(tuple(sorted(e)) for e in edges_to_remove)
+            if avg_trust < self.config.rewire_trust_threshold:
+                edges_to_remove.append((u, v))
+
+        # Deduplicate just in case (edges() should already be unique)
+        unique_cuts = set(tuple(sorted(edge)) for edge in edges_to_remove)
+
+        # --------------------------------------------------
+        # 2️⃣ Remove weak edges
+        # --------------------------------------------------
         for u, v in unique_cuts:
             if self.G.has_edge(u, v):
                 self.G.remove_edge(u, v)
-                # Cleanup trust memory
-                if v in self.G.nodes[u]['neighbor_trust']:
-                    del self.G.nodes[u]['neighbor_trust'][v]
-                if u in self.G.nodes[v]['neighbor_trust']:
-                    del self.G.nodes[v]['neighbor_trust'][u]
 
-        # 3. Form New Ties (Random Rewiring)
-        # Each node that lost a link tries to find a new random partner
-        all_nodes = list(self.G.nodes())
+        # --------------------------------------------------
+        # 3️⃣ Each endpoint seeks exactly one new partner
+        # --------------------------------------------------
+        nodes_seeking_partners = {node for edge in unique_cuts for node in edge}
+
         for u in nodes_seeking_partners:
-            # Try 5 times to find a non-neighbor
-            for _ in range(5):
-                candidate = self.rng.choice(all_nodes)
-                if candidate != u and not self.G.has_edge(u, candidate):
-                    self.G.add_edge(u, candidate)
-                    # Initialize trust BOTH ways
-                    self.init_edge_trust(u, candidate)
-                    self.init_edge_trust(candidate, u)
-                    break
+
+            # Potential candidates: not self, not already connected
+            potential = [
+                v for v in self.G.nodes()
+                if v != u and not self.G.has_edge(u, v)
+            ]
+
+            if not potential:
+                continue
+
+            # Random new partner (uses centralized RNG)
+            v_new = self.rng.choice(potential)
+
+            self.G.add_edge(u, v_new)
+
+            # Initialize trust symmetrically
+            self.trust[u][v_new] = self.config.prior_alpha
+            self.trust[v_new][u] = self.config.prior_alpha

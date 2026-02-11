@@ -113,7 +113,7 @@ if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
     st.session_state.welfare_total = 0.0
     st.session_state.layout = nx.spring_layout(
         st.session_state.sim.net.G,
-        seed=int(st.session_state.sim.rng.integers(0, 1_000_000))
+        seed=cfg.random_seed
     )
 
 sim = st.session_state.sim
