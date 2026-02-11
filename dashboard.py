@@ -12,7 +12,6 @@ from simulation import Simulation
 
 st.set_page_config(layout="wide")
 
-
 # ============================================================
 # SESSION STATE INIT
 # ============================================================
@@ -110,26 +109,31 @@ if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
     st.session_state.true_count = 0
     st.session_state.fake_count = 0
     st.session_state.welfare_total = 0.0
+    st.session_state.layout = nx.spring_layout(st.session_state.sim.net.G, seed=42)
 
 sim = st.session_state.sim
-
-if "layout" not in st.session_state:
-    st.session_state.layout = nx.spring_layout(sim.net.G, seed=42)
 
 
 # ============================================================
 # CONTROLS
 # ============================================================
 
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns(3)
 
+# --- Step ---
 if c1.button("⏭ Step"):
-    st.session_state.running = False
     run_step = True
 else:
     run_step = False
 
-if c2.button("🔄 Reset"):
+# --- Run Full Simulation ---
+if c2.button("▶ Run Full Simulation"):
+    run_full = True
+else:
+    run_full = False
+
+# --- Reset ---
+if c3.button("🔄 Reset"):
     st.session_state.sim = Simulation(cfg)
     st.session_state.cascade_id = 0
     st.session_state.verify_series = []
@@ -141,13 +145,14 @@ if c2.button("🔄 Reset"):
     st.session_state.true_count = 0
     st.session_state.fake_count = 0
     st.session_state.welfare_total = 0.0
-    st.session_state.running = False
     st.stop()
 
 
 # ============================================================
-# RUN STEP
+# RUN LOGIC
 # ============================================================
+
+MAX_CASCADES = 100
 
 def run_single_step():
     stats = sim.run_single_cascade(st.session_state.cascade_id)
@@ -197,9 +202,16 @@ def run_single_step():
     welfare_avg = st.session_state.welfare_total / t
     st.session_state.welfare_series.append(welfare_avg)
 
+def run_full_simulation(max_cascades):
+    remaining = max_cascades - st.session_state.cascade_id
+    for _ in range(remaining):
+        run_single_step()
 
 if run_step:
     run_single_step()
+
+if run_full:
+    run_full_simulation(MAX_CASCADES)
 
 
 # ============================================================
@@ -284,6 +296,5 @@ with right:
 # PROGRESS
 # ============================================================
 
-max_cascades = 50
-progress = st.session_state.cascade_id / max_cascades
+progress = st.session_state.cascade_id / MAX_CASCADES
 st.progress(min(progress, 1.0))
