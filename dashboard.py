@@ -73,8 +73,8 @@ initial_fake_belief = st.sidebar.slider("Initial Fake Prevalence Belief", 0.0, 1
 st.sidebar.divider()
 st.sidebar.markdown("### Rewiring")
 rewiring = st.sidebar.checkbox("Enable Rewiring", value=False)
-rewiring_interval = st.sidebar.slider("t (Rewiring Interval)", 1, 10, 1)
-rewire_trust_threshold = st.sidebar.slider("T (Rewiring Trust Threshold)", 0.0, 1.0, 0.3, 0.02)
+rewiring_interval = st.sidebar.slider("Rewiring Interval", 1, 10, 1)
+rewire_trust_threshold = st.sidebar.slider("Rewiring Trust Threshold", 0.0, 1.0, 0.3, 0.02)
 
 # ============================================================
 # BUILD CONFIG
