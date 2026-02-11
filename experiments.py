@@ -40,7 +40,7 @@ def run_heatmap_experiment():
                     rep_loss=2.0,
                     rep_debunk=0.5,
                     self_interest_weight=0.7,
-                    detection_accuracy=0.9,
+                    verification_accuracy=0.9,
                     enable_rewiring=True,
                     rewire_trust_threshold=0.25,
                     rewiring_interval=10

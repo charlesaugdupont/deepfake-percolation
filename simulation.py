@@ -88,7 +88,7 @@ class Simulation:
                 detected_as_fake = False
                 if is_fake:
                     # Roll for detection accuracy
-                    if random.random() < self.cfg.detection_accuracy:
+                    if random.random() < self.cfg.verification_accuracy:
                         detected_as_fake = True
                     else:
                         detected_as_fake = False # FALSE NEGATIVE!

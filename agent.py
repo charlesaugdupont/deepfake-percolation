@@ -28,7 +28,7 @@ class AgentLogic:
         """
         w = cfg.self_interest_weight
         k = reach
-        alpha = cfg.detection_accuracy
+        alpha = cfg.verification_accuracy
         
         # --- Pre-calculate Utility of Outcomes ---
         

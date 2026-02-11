@@ -16,13 +16,12 @@ class SimConfig:
     rep_loss: float = 2.0       # Loss for sharing Fake
     rep_debunk: float = 0.5     # Gain for Debunking
     
-    # --- Detection Technology (New!) ---
+    # --- Verification Technology ---
     # Probability of correctly identifying a Fake as Fake.
-    # 1.0 = Perfect, 0.9 = 10% chance of False Negative (missing the fake)
-    detection_accuracy: float = 0.95
+    verification_accuracy: float = 0.95
     
     # --- Agent Psychology ---
-    # 1.0 = Pure Self-Interest, 0.0 = Pure Altruism
+    # 0.0 = Pure Altruism ; 1.0 = Pure Self-Interest
     self_interest_weight: float = 0.5
     
     # --- Belief Priors ---
