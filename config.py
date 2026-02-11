@@ -3,8 +3,8 @@ from dataclasses import dataclass
 @dataclass
 class SimConfig:
     # --- Network ---
-    num_agents: int = 300
-    num_connections: int = 2
+    num_agents: int = 50
+    num_connections: int = 1
     
     # --- Rewiring ---
     enable_rewiring: bool = False
@@ -19,7 +19,6 @@ class SimConfig:
     
     # --- Payoffs & Costs ---
     verification_cost: float = 0.5
-    
     rep_gain: float = 1.0       # Gain for sharing Truth
     rep_loss: float = 2.0       # Loss for sharing Fake
     rep_debunk: float = 0.5     # Gain for Debunking
@@ -27,11 +26,11 @@ class SimConfig:
     # --- Detection Technology (New!) ---
     # Probability of correctly identifying a Fake as Fake.
     # 1.0 = Perfect, 0.9 = 10% chance of False Negative (missing the fake)
-    detection_accuracy: float = 0.9 
+    detection_accuracy: float = 0.95
     
     # --- Agent Psychology ---
     # 1.0 = Pure Self-Interest, 0.0 = Pure Altruism
-    self_interest_weight: float = 0.7 
+    self_interest_weight: float = 0.5
     
     # --- Belief Priors ---
     prior_alpha: float = 1.0 
