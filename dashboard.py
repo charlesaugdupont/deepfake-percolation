@@ -64,8 +64,8 @@ verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.9
 # --- Agent Psychology ---
 st.sidebar.divider()
 st.sidebar.markdown("### Agent Psychology")
-prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 0.1, 1.0, 1.0, 0.1)
-prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 0.1, 1.0, 0.2, 0.1)
+neighbor_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 0.1, 1.0, 1.0, 0.1)
+neighbor_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 0.1, 1.0, 0.2, 0.1)
 initial_fake_belief = st.sidebar.slider("Initial Fake Prevalence Belief", 0.0, 1.0, 0.3, 0.02)
 
 # --- Rewiring ---
@@ -91,8 +91,8 @@ cfg = SimConfig(
     rewiring_interval=rewiring_interval,
     rewire_trust_threshold=rewire_trust_threshold,
     verification_accuracy=verification_accuracy,
-    prior_alpha=prior_alpha,
-    prior_beta=prior_beta,
+    neighbor_prior_alpha=neighbor_prior_alpha,
+    neighbor_prior_beta=neighbor_prior_beta,
     initial_fake_belief=initial_fake_belief,
     random_seed=random_seed
 )

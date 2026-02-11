@@ -19,6 +19,7 @@ class Simulation:
         
         queue = collections.deque([(seed_node, None)])
         visited = {seed_node}
+        parent_map = {}
         
         # Store tuple: (ActionType, MarginalReach)
         # This fixes the "Reach Bug" by storing exactly how many people 
@@ -33,7 +34,7 @@ class Simulation:
 
         while queue:
             current, sender = queue.popleft()
-            n_receivers += 1 
+            n_receivers += 1
             
             # --- Belief Formation ---
             if sender is None:
@@ -44,9 +45,10 @@ class Simulation:
                     trust_params = self.net.G.nodes[current]['neighbor_trust'][sender]
                     reliability = AgentLogic.get_neighbor_reliability(trust_params['alpha'], trust_params['beta'])
                 else:
-                    reliability = 0.5 # Default if link broken recently
+                    reliability = AgentLogic.get_neighbor_reliability(self.cfg.neighbor_prior_alpha, self.cfg.neighbor_prior_beta)
 
-            global_fake_est = self.net.G.nodes[current]['fake_belief']
+            fake_stats = self.net.G.nodes[current]['fake_belief']
+            global_fake_est = fake_stats['alpha'] / (fake_stats['alpha'] + fake_stats['beta'])
             p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_fake_est)
             
             # --- Marginal Reach Calculation ---
@@ -81,6 +83,7 @@ class Simulation:
                     if nbr not in visited:
                         visited.add(nbr)
                         queue.append((nbr, current))
+                        parent_map[nbr] = current
                         
             elif action == 'VERIFY':
                 n_verifications += 1
@@ -123,7 +126,7 @@ class Simulation:
                             queue.append((nbr, current))
 
         # --- Post-Cascade Updates ---
-        self._apply_updates(actions_log, is_fake)
+        self._apply_updates(actions_log, visited, parent_map, is_fake)
         
         # --- Optional Rewiring ---
         if self.cfg.enable_rewiring and (self.cascade_count % self.cfg.rewiring_interval == 0):
@@ -139,27 +142,29 @@ class Simulation:
             'utility': total_payoff
         }
 
-    def _apply_updates(self, actions_log, item_is_fake):
+    def _apply_updates(self, actions_log, visited, parent_map, item_is_fake):
+        # --------------------------------------------------
+        # 1️⃣ Reputation updates (only agents who acted)
+        # --------------------------------------------------
         for agent, (action, marginal_reach) in actions_log.items():
-            
-            # 1. Update Reputation (Using Stored MARGINAL Reach)
             if action == 'shared_true':
                 self.net.G.nodes[agent]['reputation'] += (self.cfg.rep_gain * marginal_reach)
             elif action == 'shared_fake':
                 self.net.G.nodes[agent]['reputation'] -= (self.cfg.rep_loss * marginal_reach)
             elif action == 'debunked':
                 self.net.G.nodes[agent]['reputation'] += (self.cfg.rep_debunk * marginal_reach)
-            
-            # 2. Update Neighbors' Trust
-            # Note: Trust is updated for ALL current neighbors, even those who didn't see it,
-            # representing "word gets out" about your behavior.
-            for nbr in self.net.G.neighbors(agent):
-                if action == 'shared_true':
-                    self.net.update_trust(nbr, agent, True)
-                elif action == 'shared_fake':
-                    self.net.update_trust(nbr, agent, False)
-                elif action == 'debunked':
-                    self.net.update_trust(nbr, agent, True)
-            
-            # 3. Global Belief Update
+
+        # --------------------------------------------------
+        # 2️⃣ Global belief updates (ALL who saw item)
+        # --------------------------------------------------
+        for agent in visited:
             self.net.update_global_belief(agent, item_is_fake)
+
+        # --------------------------------------------------
+        # 3️⃣ Trust updates (receiver -> actual sender only)
+        # --------------------------------------------------
+        for receiver, sender in parent_map.items():
+            if item_is_fake:
+                self.net.update_trust(receiver, sender, False)
+            else:
+                self.net.update_trust(receiver, sender, True)

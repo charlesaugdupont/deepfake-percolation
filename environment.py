@@ -17,7 +17,10 @@ class SocialNetwork:
     def initialize_state(self):
         for node in self.G.nodes():
             self.G.nodes[node]["reputation"] = 0.0
-            self.G.nodes[node]['fake_belief'] = self.cfg.initial_fake_belief
+            self.G.nodes[node]['fake_belief'] = {
+                'alpha': self.cfg.global_prior_alpha,
+                'beta': self.cfg.global_prior_beta
+            }
             self.G.nodes[node]['neighbor_trust'] = {}
             
             # Initialize trust for existing edges
@@ -27,8 +30,8 @@ class SocialNetwork:
     def init_edge_trust(self, node, nbr):
         """Helper to init a single edge"""
         self.G.nodes[node]['neighbor_trust'][nbr] = {
-            'alpha': self.cfg.prior_alpha, 
-            'beta': self.cfg.prior_beta
+            'alpha': self.cfg.neighbor_prior_alpha, 
+            'beta': self.cfg.neighbor_prior_beta
         }
 
     def get_reach(self, node_id, visited_set):
@@ -50,10 +53,11 @@ class SocialNetwork:
             stats['beta'] += 1
             
     def update_global_belief(self, agent_id, item_was_fake: bool):
-        lr = 0.1
-        current = self.G.nodes[agent_id]['fake_belief']
-        observed = 1.0 if item_was_fake else 0.0
-        self.G.nodes[agent_id]['fake_belief'] = (1 - lr) * current + lr * observed
+        stats = self.G.nodes[agent_id]['fake_belief']
+        if item_was_fake:
+            stats['alpha'] += 1
+        else:
+            stats['beta'] += 1
 
     def rewire_network(self):
         """

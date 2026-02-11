@@ -24,9 +24,10 @@ class SimConfig:
     verification_accuracy: float = 0.95
     
     # --- Belief Priors ---
-    prior_alpha: float = 1.0 
-    prior_beta: float = 0.2  # Starts slightly trusting
-    initial_fake_belief: float = 0.3
+    neighbor_prior_alpha: float = 1.0 
+    neighbor_prior_beta: float = 0.2  # initial neighbor trust = 1 / (1 + 0.2) = 0.83
+    global_prior_alpha: float = 3.0
+    global_prior_beta: float = 7.0 # initial global fake prevalence = 3 / (3 + 7) = 0.3
 
     # --- Rewiring ---
     enable_rewiring: bool = False
