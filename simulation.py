@@ -1,5 +1,6 @@
 import collections
-import random
+import numpy as np
+
 from config import SimConfig
 from agent import AgentLogic
 from environment import SocialNetwork
@@ -7,13 +8,14 @@ from environment import SocialNetwork
 class Simulation:
     def __init__(self, config: SimConfig):
         self.cfg = config
+        self.rng = np.random.default_rng(self.cfg.random_seed)
         self.net = SocialNetwork(config)
         self.cascade_count = 0
 
-    def run_single_cascade(self, cascade_id):
+    def run_single_cascade(self):
         self.cascade_count += 1
-        is_fake = random.random() < self.cfg.global_fake_prob
-        seed_node = random.choice(list(self.net.G.nodes()))
+        is_fake = self.rng.random() < self.cfg.global_fake_prob
+        seed_node = self.rng.choice(list(self.net.G.nodes()))
         
         queue = collections.deque([(seed_node, None)])
         visited = {seed_node}
@@ -88,7 +90,7 @@ class Simulation:
                 detected_as_fake = False
                 if is_fake:
                     # Roll for detection accuracy
-                    if random.random() < self.cfg.verification_accuracy:
+                    if self.rng.random() < self.cfg.verification_accuracy:
                         detected_as_fake = True
                     else:
                         detected_as_fake = False # FALSE NEGATIVE!

@@ -49,7 +49,7 @@ def run_heatmap_experiment():
                 sim = Simulation(cfg)
                 
                 for cascade_idx in range(CASCADES_PER_TRIAL):
-                    stats = sim.run_single_cascade(cascade_idx)
+                    stats = sim.run_single_cascade()
                     
                     point_utilities.append(stats['utility'])
                     

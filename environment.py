@@ -1,13 +1,11 @@
 import networkx as nx
-import random
-import numpy as np
 from config import SimConfig
 from agent import AgentLogic
 
 class SocialNetwork:
     def __init__(self, config: SimConfig):
         self.cfg = config
-        self.G = nx.barabasi_albert_graph(n=config.num_agents, m=config.num_connections)
+        self.G = nx.barabasi_albert_graph(n=config.num_agents, m=config.num_connections, seed=self.rng.integers(0, 1_000_000))
         self.initialize_state()
 
     def initialize_state(self):
@@ -94,7 +92,7 @@ class SocialNetwork:
         for u in nodes_seeking_partners:
             # Try 5 times to find a non-neighbor
             for _ in range(5):
-                candidate = random.choice(all_nodes)
+                candidate = self.cfg.rng.choice(all_nodes)
                 if candidate != u and not self.G.has_edge(u, candidate):
                     self.G.add_edge(u, candidate)
                     # Initialize trust BOTH ways

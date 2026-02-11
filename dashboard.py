@@ -39,6 +39,7 @@ if "initialized" not in st.session_state:
 # ============================================================
 
 st.sidebar.title("Parameters")
+random_seed = st.sidebar.number_input("Random Seed", 0, 1_000_000, 42, 1)
 
 # --- Network structure ---
 st.sidebar.divider()
@@ -94,7 +95,8 @@ cfg = SimConfig(
     self_interest_weight=self_interest_weight,
     prior_alpha=prior_alpha,
     prior_beta=prior_beta,
-    initial_fake_belief=initial_fake_belief
+    initial_fake_belief=initial_fake_belief,
+    random_seed=random_seed
 )
 
 if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
@@ -109,7 +111,7 @@ if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
     st.session_state.true_count = 0
     st.session_state.fake_count = 0
     st.session_state.welfare_total = 0.0
-    st.session_state.layout = nx.spring_layout(st.session_state.sim.net.G, seed=42)
+    st.session_state.layout = nx.spring_layout(st.session_state.sim.net.G, seed=cfg.random_seed)
 
 sim = st.session_state.sim
 
@@ -155,7 +157,7 @@ if c3.button("🔄 Reset"):
 MAX_CASCADES = 100
 
 def run_single_step():
-    stats = sim.run_single_cascade(st.session_state.cascade_id)
+    stats = sim.run_single_cascade()
     st.session_state.cascade_id += 1
 
     # --- Verification running average ---

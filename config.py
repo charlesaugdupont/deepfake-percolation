@@ -2,6 +2,9 @@ from dataclasses import dataclass
 
 @dataclass
 class SimConfig:
+
+    random_seed: int = 42
+
     # --- Network ---
     num_agents: int = 50
     num_connections: int = 1
