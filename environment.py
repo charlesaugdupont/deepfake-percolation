@@ -41,7 +41,7 @@ class SocialNetwork:
 
     def update_trust(self, observer, sender, sender_was_truthful: bool):
         if sender not in self.G.nodes[observer]['neighbor_trust']:
-            return # Edge might have been removed
+            return
             
         stats = self.G.nodes[observer]['neighbor_trust'][sender]
         if sender_was_truthful:
@@ -57,56 +57,72 @@ class SocialNetwork:
 
     def rewire_network(self):
         """
-        Rewire edges whose trust falls below the threshold.
+        Rewire edges whose average reliability falls below threshold.
         Each removed undirected edge produces exactly one reconnection
-        attempt per endpoint. Prevents duplicate removals and degree bias.
+        attempt per endpoint.
         """
         edges_to_remove = []
 
         # --------------------------------------------------
-        # 1️⃣ Identify weak edges (avoid double counting)
+        # 1️⃣ Identify weak edges (edges() already unique)
         # --------------------------------------------------
         for u, v in self.G.edges():
-            trust_uv = self.trust[u][v]
-            trust_vu = self.trust[v][u]
 
-            # You can choose asymmetric or average trust rule
-            avg_trust = 0.5 * (trust_uv + trust_vu)
+            trust_uv = self.G.nodes[u]["neighbor_trust"].get(v)
+            trust_vu = self.G.nodes[v]["neighbor_trust"].get(u)
 
-            if avg_trust < self.config.rewire_trust_threshold:
+            # Safety check (edge might be partially cleaned)
+            if not trust_uv or not trust_vu:
+                continue
+
+            rel_uv = AgentLogic.get_neighbor_reliability(
+                trust_uv["alpha"], trust_uv["beta"]
+            )
+
+            rel_vu = AgentLogic.get_neighbor_reliability(
+                trust_vu["alpha"], trust_vu["beta"]
+            )
+
+            if rel_uv < self.cfg.rewire_trust_threshold or rel_vu < self.cfg.rewire_trust_threshold:
                 edges_to_remove.append((u, v))
 
-        # Deduplicate just in case (edges() should already be unique)
-        unique_cuts = set(tuple(sorted(edge)) for edge in edges_to_remove)
+        # --------------------------------------------------
+        # 2️⃣ Remove weak edges + clean trust memory
+        # --------------------------------------------------
+        nodes_seeking = set()
 
-        # --------------------------------------------------
-        # 2️⃣ Remove weak edges
-        # --------------------------------------------------
-        for u, v in unique_cuts:
+        for u, v in edges_to_remove:
             if self.G.has_edge(u, v):
                 self.G.remove_edge(u, v)
 
-        # --------------------------------------------------
-        # 3️⃣ Each endpoint seeks exactly one new partner
-        # --------------------------------------------------
-        nodes_seeking_partners = {node for edge in unique_cuts for node in edge}
+            # Clean trust memory both directions
+            self.G.nodes[u]["neighbor_trust"].pop(v, None)
+            self.G.nodes[v]["neighbor_trust"].pop(u, None)
 
-        for u in nodes_seeking_partners:
+            nodes_seeking.add(u)
+            nodes_seeking.add(v)
 
-            # Potential candidates: not self, not already connected
+        # --------------------------------------------------
+        # 3️⃣ Each endpoint seeks ONE new partner
+        # --------------------------------------------------
+        all_nodes = list(self.G.nodes())
+
+        for u in nodes_seeking:
+
+            # Candidates: not self, not already connected
             potential = [
-                v for v in self.G.nodes()
+                v for v in all_nodes
                 if v != u and not self.G.has_edge(u, v)
             ]
 
             if not potential:
                 continue
 
-            # Random new partner (uses centralized RNG)
             v_new = self.rng.choice(potential)
 
             self.G.add_edge(u, v_new)
 
-            # Initialize trust symmetrically
-            self.trust[u][v_new] = self.config.prior_alpha
-            self.trust[v_new][u] = self.config.prior_alpha
+            # Initialize trust BOTH ways using existing helper
+            self.init_edge_trust(u, v_new)
+            self.init_edge_trust(v_new, u)
+
