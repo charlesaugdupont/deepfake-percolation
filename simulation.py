@@ -9,7 +9,7 @@ class Simulation:
     def __init__(self, config: SimConfig):
         self.cfg = config
         self.rng = np.random.default_rng(self.cfg.random_seed)
-        self.net = SocialNetwork(config)
+        self.net = SocialNetwork(config, self.rng)
         self.cascade_count = 0
 
     def run_single_cascade(self):

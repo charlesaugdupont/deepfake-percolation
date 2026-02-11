@@ -10,6 +10,7 @@ def run_heatmap_experiment():
     RESOLUTION = 20           
     NUM_TRIALS = 20           # Fresh networks per pixel
     CASCADES_PER_TRIAL = 50   # Longer episodes to allow rewiring to happen
+    BASE_SEED = 23
     
     costs = np.linspace(0.0, 4.0, RESOLUTION) 
     prevalences = np.linspace(0.05, 0.95, RESOLUTION) 
@@ -30,7 +31,7 @@ def run_heatmap_experiment():
             point_verify_rates = []
             point_utilities = []
             
-            for _ in range(NUM_TRIALS):
+            for trial in range(NUM_TRIALS):
                 cfg = SimConfig(
                     num_agents=200,
                     num_connections=2,
@@ -43,7 +44,8 @@ def run_heatmap_experiment():
                     verification_accuracy=0.9,
                     enable_rewiring=True,
                     rewire_trust_threshold=0.25,
-                    rewiring_interval=10
+                    rewiring_interval=10,
+                    random_seed=BASE_SEED + trial
                 )
                 
                 sim = Simulation(cfg)
