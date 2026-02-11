@@ -46,7 +46,7 @@ st.sidebar.divider()
 st.sidebar.markdown("### Network / Global")
 N = st.sidebar.slider("N", 10, 500, 50, step=5)
 m = st.sidebar.slider("m", 1, 20, 1)
-global_fake_prob = st.sidebar.slider("Fake Probability", 0.0, 1.0, 0.5, 0.02)
+global_fake_prob = st.sidebar.slider("Fake Prevalence", 0.0, 1.0, 0.5, 0.02)
 
 # --- Payoffs ---
 st.sidebar.divider()
@@ -66,7 +66,8 @@ st.sidebar.divider()
 st.sidebar.markdown("### Agent Psychology")
 neighbor_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 0.1, 1.0, 1.0, 0.1)
 neighbor_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 0.1, 1.0, 0.2, 0.1)
-initial_fake_belief = st.sidebar.slider("Initial Fake Prevalence Belief", 0.0, 1.0, 0.3, 0.02)
+global_prevalence_prior_alpha = st.sidebar.slider("Prior Global Veracity Belief (True Weight)", 1, 5, 2, 1)
+global_prevalence_prior_beta = st.sidebar.slider("Prior Global Veracity Belief (False Weight)", 1, 5, 3, 1)
 
 # --- Rewiring ---
 st.sidebar.divider()
@@ -93,7 +94,8 @@ cfg = SimConfig(
     verification_accuracy=verification_accuracy,
     neighbor_prior_alpha=neighbor_prior_alpha,
     neighbor_prior_beta=neighbor_prior_beta,
-    initial_fake_belief=initial_fake_belief,
+    global_prior_alpha=global_prevalence_prior_alpha,
+    global_prior_beta=global_prevalence_prior_beta,
     random_seed=random_seed
 )
 
@@ -228,8 +230,10 @@ left, right = st.columns([3, 2])
 # LARGE METRIC PLOTS
 # ============================================================
 
+G_net = sim.net.G
+
 with left:
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig, axes = plt.subplots(3, 2, figsize=(16, 16))
 
     axes[0, 0].plot(st.session_state.true_series, linewidth=2.5, color="seagreen")
     axes[0, 0].set_title("True Cascade Size (Running Avg)", fontsize=16)
@@ -246,6 +250,32 @@ with left:
     axes[1, 1].plot(st.session_state.welfare_series, linewidth=2.5)
     axes[1, 1].set_title("Average Social Welfare", fontsize=16)
 
+    reputations = np.array([
+        G_net.nodes[n]["reputation"] for n in G_net.nodes()
+    ])
+    axes[2, 0].hist(reputations, bins=30)
+    axes[2, 0].set_title("Reputation Distribution", fontsize=16)
+    axes[2, 0].grid(alpha=0.3)
+
+    trust_values = []
+    for u in G_net.nodes():
+        for v in G_net.nodes[u]["neighbor_trust"]:
+            stats_trust = G_net.nodes[u]["neighbor_trust"][v]
+            trust_values.append(
+                stats_trust["alpha"] /
+                (stats_trust["alpha"] + stats_trust["beta"])
+            )
+
+    if trust_values:
+        axes[2, 1].hist(trust_values, bins=30)
+    else:
+        axes[2, 1].hist([0])
+
+    axes[2, 1].set_title("Trust Distribution", fontsize=16)
+    axes[2, 1].set_xlim(0, 1)
+    axes[2, 1].grid(alpha=0.3)
+
+
     for ax in axes.flat:
         ax.grid(alpha=0.3)
         ax.tick_params(labelsize=12)
@@ -261,7 +291,6 @@ with left:
 with right:
     fig_net, ax_net = plt.subplots(figsize=(10, 10))
 
-    G_net = sim.net.G
     pos = st.session_state.layout
 
     reputations = np.array([
@@ -284,7 +313,28 @@ with right:
         ax=ax_net
     )
 
-    nx.draw_networkx_edges(G_net, pos, alpha=0.2, ax=ax_net)
+    # Draw all base edges in light gray
+    nx.draw_networkx_edges(
+        G_net,
+        pos,
+        edgelist=list(G_net.edges()),
+        edge_color="lightgray",
+        width=0.8,
+        alpha=1,
+        ax=ax_net
+    )
+
+    # Overlay cascade edges if they exist
+    if sim.last_cascade_edges:
+        nx.draw_networkx_edges(
+            G_net,
+            pos,
+            edgelist=sim.last_cascade_edges,
+            edge_color="green",
+            width=1,
+            ax=ax_net
+        )
+
 
     sm = plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.RdBu)
     sm.set_array([])

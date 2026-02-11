@@ -11,6 +11,7 @@ class Simulation:
         self.rng = np.random.default_rng(self.cfg.random_seed)
         self.net = SocialNetwork(config, self.rng)
         self.cascade_count = 0
+        self.last_cascade_edges = [] # For visualization
 
     def run_single_cascade(self):
         self.cascade_count += 1
@@ -31,6 +32,7 @@ class Simulation:
         n_debunks = 0
         n_receivers = 0 
         total_payoff = 0.0
+        cascade_edges = []
 
         while queue:
             current, sender = queue.popleft()
@@ -84,6 +86,7 @@ class Simulation:
                         visited.add(nbr)
                         queue.append((nbr, current))
                         parent_map[nbr] = current
+                        cascade_edges.append((current, nbr))
                         
             elif action == 'VERIFY':
                 n_verifications += 1
@@ -124,9 +127,15 @@ class Simulation:
                         if nbr not in visited:
                             visited.add(nbr)
                             queue.append((nbr, current))
+                            parent_map[nbr] = current
+                            cascade_edges.append((current, nbr))
 
         # --- Post-Cascade Updates ---
         self._apply_updates(actions_log, visited, parent_map, is_fake)
+
+        self.last_cascade_edges = cascade_edges
+        print(cascade_edges) # Debugging line to verify edges are captured correctly
+        print(len(cascade_edges))
         
         # --- Optional Rewiring ---
         if self.cfg.enable_rewiring and (self.cascade_count % self.cfg.rewiring_interval == 0):
