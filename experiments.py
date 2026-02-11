@@ -10,7 +10,8 @@ def run_heatmap_experiment():
     RESOLUTION = 20           
     NUM_TRIALS = 20           # Fresh networks per pixel
     CASCADES_PER_TRIAL = 50   # Longer episodes to allow rewiring to happen
-    BASE_SEED = 23
+    MASTER_SEED = 12345
+    master_rng = np.random.default_rng(MASTER_SEED)
     
     costs = np.linspace(0.0, 4.0, RESOLUTION) 
     prevalences = np.linspace(0.05, 0.95, RESOLUTION) 
@@ -25,13 +26,16 @@ def run_heatmap_experiment():
     
     for i, prev in enumerate(tqdm(prevalences, desc="Sweeping")):
         for j, cost in enumerate(costs):
+
+            cell_seed = master_rng.integers(0, 1_000_000_000)
+            cell_rng = np.random.default_rng(cell_seed)
             
             point_fake_sizes = []
             point_true_sizes = []
             point_verify_rates = []
             point_utilities = []
             
-            for trial in range(NUM_TRIALS):
+            for _ in range(NUM_TRIALS):
                 cfg = SimConfig(
                     num_agents=200,
                     num_connections=2,
@@ -45,12 +49,12 @@ def run_heatmap_experiment():
                     enable_rewiring=True,
                     rewire_trust_threshold=0.25,
                     rewiring_interval=10,
-                    random_seed=BASE_SEED + trial
+                    random_seed=cell_rng.integers(0, 1_000_000_000)
                 )
                 
                 sim = Simulation(cfg)
                 
-                for cascade_idx in range(CASCADES_PER_TRIAL):
+                for _ in range(CASCADES_PER_TRIAL):
                     stats = sim.run_single_cascade()
                     
                     point_utilities.append(stats['utility'])

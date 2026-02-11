@@ -6,10 +6,11 @@ class SocialNetwork:
     def __init__(self, config: SimConfig, rng):
         self.cfg = config
         self.rng = rng
+
         self.G = nx.barabasi_albert_graph(
             n=config.num_agents,
             m=config.num_connections,
-            seed=int(rng.integers(0, 1_000_000))
+            seed=self.rng
         )
         self.initialize_state()
 
