@@ -52,7 +52,8 @@ class Simulation:
             stats = self.net.G.nodes[current]['true_belief']
             global_true_est = stats['alpha'] / (stats['alpha'] + stats['beta'])
             p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
-            
+            p_true = round(p_true, 5)
+
             # --- Marginal Reach Calculation ---
             # How many neighbors have NOT seen this item yet?
             reach = self.net.get_reach(current, visited)
