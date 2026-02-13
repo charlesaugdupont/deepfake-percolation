@@ -18,8 +18,8 @@ class SocialNetwork:
         for node in self.G.nodes():
             self.G.nodes[node]["reputation"] = 0.0
             self.G.nodes[node]['true_belief'] = {
-                'alpha': self.cfg.global_prior_alpha,
-                'beta': self.cfg.global_prior_beta
+                'alpha': self.cfg.global_truth_prior_alpha,
+                'beta': self.cfg.global_false_prior_beta
             }
             self.G.nodes[node]['neighbor_trust'] = {}
             
@@ -30,8 +30,8 @@ class SocialNetwork:
     def init_edge_trust(self, node, nbr):
         """Helper to init a single edge"""
         self.G.nodes[node]['neighbor_trust'][nbr] = {
-            'alpha': self.cfg.neighbor_prior_alpha, 
-            'beta': self.cfg.neighbor_prior_beta
+            'alpha': self.cfg.neighbor_truth_prior_alpha, 
+            'beta': self.cfg.neighbor_false_prior_beta
         }
 
     def get_reach(self, node_id, visited_set):

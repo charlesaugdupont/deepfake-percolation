@@ -64,10 +64,10 @@ verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.9
 # --- Agent Psychology ---
 st.sidebar.divider()
 st.sidebar.markdown("### Agent Psychology")
-neighbor_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 0.1, 1.0, 1.0, 0.1)
-neighbor_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 0.1, 1.0, 0.2, 0.1)
-global_prevalence_prior_alpha = st.sidebar.slider("Prior Global Veracity Belief (True Weight)", 1, 5, 2, 1)
-global_prevalence_prior_beta = st.sidebar.slider("Prior Global Veracity Belief (False Weight)", 1, 5, 3, 1)
+neighbor_truth_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 1, 5, 1, 1)
+neighbor_false_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 1, 5, 1, 1)
+global_prevalence_prior_alpha = st.sidebar.slider("Prior Global Trust (True Weight)", 1, 5, 3, 1)
+global_prevalence_prior_beta = st.sidebar.slider("Prior Global Trust (False Weight)", 1, 5, 2, 1)
 
 # --- Rewiring ---
 st.sidebar.divider()
@@ -92,10 +92,10 @@ cfg = SimConfig(
     rewiring_interval=rewiring_interval,
     rewire_trust_threshold=rewire_trust_threshold,
     verification_accuracy=verification_accuracy,
-    neighbor_prior_alpha=neighbor_prior_alpha,
-    neighbor_prior_beta=neighbor_prior_beta,
-    global_prior_alpha=global_prevalence_prior_alpha,
-    global_prior_beta=global_prevalence_prior_beta,
+    neighbor_truth_prior_alpha=neighbor_truth_prior_alpha,
+    neighbor_false_prior_beta=neighbor_false_prior_beta,
+    global_truth_prior_alpha=global_prevalence_prior_alpha,
+    global_false_prior_beta=global_prevalence_prior_beta,
     random_seed=random_seed
 )
 

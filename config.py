@@ -24,10 +24,10 @@ class SimConfig:
     verification_accuracy: float = 0.95
     
     # --- Belief Priors ---
-    neighbor_prior_alpha: float = 1.0 
-    neighbor_prior_beta: float = 0.2  # initial neighbor trust = 1 / (1 + 0.2) = 0.83
-    global_prior_alpha: float = 3.0
-    global_prior_beta: float = 2.0 # initial global true prevalence = 3 / (3 + 2) = 0.6
+    neighbor_truth_prior_alpha: float = 1.0 
+    neighbor_false_prior_beta: float = 0.2  # initial neighbor trust = 1 / (1 + 0.2) = 0.83
+    global_truth_prior_alpha: float = 3.0
+    global_false_prior_beta: float = 2.0 # initial global true prevalence = 3 / (3 + 2) = 0.6
 
     # --- Rewiring ---
     enable_rewiring: bool = False

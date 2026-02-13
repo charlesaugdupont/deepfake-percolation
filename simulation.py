@@ -47,7 +47,7 @@ class Simulation:
                     trust_params = self.net.G.nodes[current]['neighbor_trust'][sender]
                     reliability = AgentLogic.get_neighbor_reliability(trust_params['alpha'], trust_params['beta'])
                 else:
-                    reliability = AgentLogic.get_neighbor_reliability(self.cfg.neighbor_prior_alpha, self.cfg.neighbor_prior_beta)
+                    reliability = AgentLogic.get_neighbor_reliability(self.cfg.neighbor_truth_prior_alpha, self.cfg.neighbor_false_prior_beta)
 
             stats = self.net.G.nodes[current]['true_belief']
             global_true_est = stats['alpha'] / (stats['alpha'] + stats['beta'])
