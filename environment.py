@@ -17,7 +17,7 @@ class SocialNetwork:
     def initialize_state(self):
         for node in self.G.nodes():
             self.G.nodes[node]["reputation"] = 0.0
-            self.G.nodes[node]['fake_belief'] = {
+            self.G.nodes[node]['true_belief'] = {
                 'alpha': self.cfg.global_prior_alpha,
                 'beta': self.cfg.global_prior_beta
             }
@@ -53,11 +53,11 @@ class SocialNetwork:
             stats['beta'] += 1
             
     def update_global_belief(self, agent_id, item_was_fake: bool):
-        stats = self.G.nodes[agent_id]['fake_belief']
+        stats = self.G.nodes[agent_id]['true_belief']
         if item_was_fake:
-            stats['alpha'] += 1
-        else:
             stats['beta'] += 1
+        else:
+            stats['alpha'] += 1
 
     def rewire_network(self):
         """

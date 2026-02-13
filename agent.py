@@ -9,13 +9,12 @@ class AgentLogic:
     @staticmethod
     def calculate_posterior_truth_prob(
         reliability: float, 
-        global_fake_belief: float
+        global_true_belief: float
     ) -> float:
         """Bayesian update based on who sent the item."""
-        p_true_global = 1.0 - global_fake_belief
-        
-        numerator = reliability * p_true_global
-        denominator = (reliability * p_true_global) + ((1 - reliability) * global_fake_belief)
+        p_false_global = 1.0 - global_true_belief
+        numerator = reliability * global_true_belief
+        denominator = (reliability * global_true_belief) + ((1 - reliability) * p_false_global)
         
         if denominator == 0: return 0.5
         return numerator / denominator

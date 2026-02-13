@@ -49,10 +49,11 @@ class Simulation:
                 else:
                     reliability = AgentLogic.get_neighbor_reliability(self.cfg.neighbor_prior_alpha, self.cfg.neighbor_prior_beta)
 
-            fake_stats = self.net.G.nodes[current]['fake_belief']
-            global_fake_est = fake_stats['alpha'] / (fake_stats['alpha'] + fake_stats['beta'])
-            p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_fake_est)
-            
+            stats = self.net.G.nodes[current]['true_belief']
+            global_true_est = stats['alpha'] / (stats['alpha'] + stats['beta'])
+            p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
+            p_true = round(p_true, 5)
+
             # --- Marginal Reach Calculation ---
             # How many neighbors have NOT seen this item yet?
             reach = self.net.get_reach(current, visited)
