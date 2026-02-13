@@ -134,8 +134,6 @@ class Simulation:
         self._apply_updates(actions_log, visited, parent_map, is_fake)
 
         self.last_cascade_edges = cascade_edges
-        print(cascade_edges) # Debugging line to verify edges are captured correctly
-        print(len(cascade_edges))
         
         # --- Optional Rewiring ---
         if self.cfg.enable_rewiring and (self.cascade_count % self.cfg.rewiring_interval == 0):
