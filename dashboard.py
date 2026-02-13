@@ -44,8 +44,8 @@ random_seed = st.sidebar.number_input("Random Seed", 0, 1_000_000, 42, 1)
 # --- Network structure ---
 st.sidebar.divider()
 st.sidebar.markdown("### Network / Global")
-N = st.sidebar.slider("N", 10, 500, 50, step=5)
-m = st.sidebar.slider("m", 1, 20, 1)
+N = st.sidebar.slider("N", 10, 500, 200, step=5)
+m = st.sidebar.slider("m", 1, 20, 2)
 global_fake_prob = st.sidebar.slider("Fake Prevalence", 0.0, 1.0, 0.5, 0.02)
 
 # --- Payoffs ---
@@ -54,17 +54,17 @@ st.sidebar.markdown("### Payoffs")
 C = st.sidebar.slider("Verification Cost", 0.0, 5.0, 1.0, 0.05)
 G = st.sidebar.slider("Reputation Gain", 0.0, 5.0, 1.0, 0.05)
 L = st.sidebar.slider("Reputation Loss", 0.0, 5.0, 2.0, 0.05)
-D = st.sidebar.slider("Debunk Reward", 0.0, 5.0, 1.5, 0.05)
+D = st.sidebar.slider("Debunk Reward", 0.0, 5.0, 0.5, 0.05)
 
 # --- Verification Technology ---
 st.sidebar.divider()
 st.sidebar.markdown("### Verification Technology")
-verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.95, 0.01)
+verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.9, 0.01)
 
 # --- Agent Psychology ---
 st.sidebar.divider()
 st.sidebar.markdown("### Agent Psychology")
-neighbor_truth_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 1, 5, 1, 1)
+neighbor_truth_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 1, 5, 3, 1)
 neighbor_false_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weight)", 1, 5, 1, 1)
 global_prevalence_prior_alpha = st.sidebar.slider("Prior Global Trust (True Weight)", 1, 5, 3, 1)
 global_prevalence_prior_beta = st.sidebar.slider("Prior Global Trust (False Weight)", 1, 5, 2, 1)
@@ -248,7 +248,7 @@ with left:
     axes[1, 0].set_ylim(0, 1)
 
     axes[1, 1].plot(st.session_state.welfare_series, linewidth=2.5)
-    axes[1, 1].set_title("Average Social Welfare", fontsize=16)
+    axes[1, 1].set_title("Average Reputation", fontsize=16)
 
     reputations = np.array([
         G_net.nodes[n]["reputation"] for n in G_net.nodes()
