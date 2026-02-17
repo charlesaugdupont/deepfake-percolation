@@ -34,6 +34,7 @@ random_seed = st.sidebar.number_input("Random Seed", 0, 1_000_000, 42, 1)
 # network structure 
 st.sidebar.divider()
 st.sidebar.markdown("### Network / Global")
+n_cascades = st.sidebar.slider("Number of Cascades", 10, 200, 100, step=10)
 N = st.sidebar.slider("N", 10, 500, 200, step=5)
 m = st.sidebar.slider("m", 1, 20, 2)
 global_fake_prob = st.sidebar.slider("Fake Prevalence", 0.0, 1.0, 0.5, 0.02)
@@ -131,7 +132,7 @@ if c3.button("🔄 Reset"):
     st.stop()
 
 # run logic
-MAX_CASCADES = 100
+NUM_CASCADES = 100
 
 def run_single_step():
     stats = sim.run_single_cascade()
@@ -191,7 +192,7 @@ if run_step:
 
 if run_full:
     print(len(sim.net.G.edges()))
-    run_full_simulation(MAX_CASCADES)
+    run_full_simulation(n_cascades)
     print(len(sim.net.G.edges()))
 
 # configure layout
@@ -230,8 +231,7 @@ with left:
         for v in G_net.nodes[u]["neighbor_trust"]:
             stats_trust = G_net.nodes[u]["neighbor_trust"][v]
             trust_values.append(
-                stats_trust["alpha"] /
-                (stats_trust["alpha"] + stats_trust["beta"])
+                stats_trust["alpha"] / (stats_trust["alpha"] + stats_trust["beta"])
             )
 
     if trust_values:
@@ -310,5 +310,5 @@ with right:
 
 
 # progress
-progress = st.session_state.cascade_id / MAX_CASCADES
+progress = st.session_state.cascade_id / n_cascades
 st.progress(min(progress, 1.0))

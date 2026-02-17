@@ -7,13 +7,13 @@ from simulation import Simulation
 
 def run_heatmap_experiment():
     RESOLUTION = 20
-    NUM_TRIALS = 8
+    NUM_TRIALS = 10
     CASCADES_PER_TRIAL = 50
     MASTER_SEED = 12345
-    master_rng = np.random.default_rng(MASTER_SEED)
+    MASTER_RNG = np.random.default_rng(MASTER_SEED)
     
-    costs = np.linspace(0.0, 4.0, RESOLUTION) 
-    prevalences = np.linspace(0.05, 0.95, RESOLUTION) 
+    costs = np.linspace(0.1, 4.0, RESOLUTION) 
+    prevalences = np.linspace(0.1, 0.9, RESOLUTION) 
     
     grid_fake_size = np.zeros((RESOLUTION, RESOLUTION))
     grid_true_size = np.zeros((RESOLUTION, RESOLUTION))
@@ -26,7 +26,7 @@ def run_heatmap_experiment():
     for i, prev in enumerate(tqdm(prevalences, desc="Sweeping")):
         for j, cost in enumerate(costs):
 
-            cell_seed = master_rng.integers(0, 1_000_000_000)
+            cell_seed = MASTER_RNG.integers(0, 1_000_000_000)
             cell_rng = np.random.default_rng(cell_seed)
             
             point_fake_sizes = []
@@ -116,7 +116,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im4, ax=ax4)
     plt.tight_layout()
-    plt.savefig("results_refactored.png")
+    plt.savefig("results.png")
     plt.show()
 
 if __name__ == "__main__":

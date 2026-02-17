@@ -94,16 +94,26 @@ class SocialNetwork:
                 nodes[rewiring_node]['neighbor_trust'].pop(passive_node, None)
                 nodes[passive_node]['neighbor_trust'].pop(rewiring_node, None)
 
-                if self.G.degree(passive_node) == 0:
-                    self.rewire_node(passive_node, nodes, node_to_avoid=rewiring_node)
-                else:
-                    self.rewire_node(rewiring_node, nodes, node_to_avoid=passive_node)
+                # if not nx.is_connected(self.G):
+                #     import IPython; IPython.embed()
+                #     # TODO: node removal may result in disconnected graph
+                #     # if so, we must connect the rewiring node to a node in the OTHER connected component
+                #     # msut avoid any nodes in its own connected component
+                
+                #     # get connected component that rewiring_node belongs to
+                #     connected_component = nx.node_connected_component(self.G, rewiring_node)
+                #     self.rewire_node(rewiring_node, nodes, nodes_to_avoid=connected_component|{passive_node})
 
-    def rewire_node(self, u, nodes, node_to_avoid=None):
+                if self.G.degree(passive_node) == 0:
+                    self.rewire_node(passive_node, nodes, nodes_to_avoid={rewiring_node})
+                else:
+                    self.rewire_node(rewiring_node, nodes, nodes_to_avoid={passive_node})
+
+    def rewire_node(self, u, nodes, nodes_to_avoid):
         """
         Adds one new edge for node u.
         """
-        candidates = list(set(self.G.nodes) - set(self.G.neighbors(u)) - {u} - {node_to_avoid})
+        candidates = list(set(self.G.nodes) - set(self.G.neighbors(u)) - {u} - nodes_to_avoid)
         if len(candidates) == 0:
             return
         reputation = np.array([nodes[n]['reputation'] for n in candidates], dtype=np.float32)
