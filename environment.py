@@ -7,31 +7,42 @@ from agent import AgentLogic
 class SocialNetwork:
     def __init__(self, config: SimConfig, rng):
         self.cfg = config
-        self.rng = rng
+        self.rng = rng # Expecting numpy.random.Generator
 
         self.G = nx.barabasi_albert_graph(
             n=config.num_agents,
             m=config.num_connections,
-            seed=self.rng
+            seed=int(self.rng.integers(0, 10**9)) # generic rng to int seed
         )
         self.initialize_state()
 
     def initialize_state(self):
+        # OPTIMIZATION: Use bulk attribute setting instead of iterating
+        # This is much faster in NetworkX internal C loops
+        
+        # 1. Base attributes
+        nx.set_node_attributes(self.G, 0.0, "reputation")
+        
+        # 2. Complex objects (dicts) still need generation, but we can do it cleanly
+        # Shared belief object structure
+        base_belief = {
+            'alpha': self.cfg.global_truth_prior_alpha,
+            'beta': self.cfg.global_false_prior_beta
+        }
+        
         for node in self.G.nodes():
-            self.G.nodes[node]["reputation"] = 0.0
-            self.G.nodes[node]['true_belief'] = {
-                'alpha': self.cfg.global_truth_prior_alpha,
-                'beta': self.cfg.global_false_prior_beta
-            }
+            # Copy is essential so nodes don't share the same reference
+            self.G.nodes[node]['true_belief'] = base_belief.copy()
             self.G.nodes[node]['neighbor_trust'] = {}
             
-            # Initialize trust for existing edges
-            for nbr in self.G.neighbors(node):
-                self.init_edge_trust(node, nbr)
+        # 3. Initialize Trust (Iterate edges, not nodes -> neighbors)
+        for u, v in self.G.edges():
+            self._init_trust_one_way(u, v)
+            self._init_trust_one_way(v, u)
 
-    def init_edge_trust(self, node, nbr):
-        """Helper to init a single edge"""
-        self.G.nodes[node]['neighbor_trust'][nbr] = {
+    def _init_trust_one_way(self, observer, target):
+        """Optimized internal helper"""
+        self.G.nodes[observer]['neighbor_trust'][target] = {
             'alpha': self.cfg.neighbor_truth_prior_alpha, 
             'beta': self.cfg.neighbor_false_prior_beta
         }
@@ -39,16 +50,18 @@ class SocialNetwork:
     def get_reach(self, node_id, visited_set):
         """
         Marginal Reach: Count of neighbors who are NOT in visited_set.
+        OPTIMIZATION: Generator expression avoids creating a list in memory.
         """
-        neighbors = list(self.G.neighbors(node_id))
-        unseen = [n for n in neighbors if n not in visited_set]
-        return len(unseen)
+        # sum(1 for ...) is faster and memory efficient for counting
+        return sum(1 for n in self.G.neighbors(node_id) if n not in visited_set)
 
     def update_trust(self, observer, sender, sender_was_truthful: bool):
-        if sender not in self.G.nodes[observer]['neighbor_trust']:
+        # Direct dict lookup is fast enough
+        trust_map = self.G.nodes[observer].get('neighbor_trust')
+        if not trust_map or sender not in trust_map:
             return
             
-        stats = self.G.nodes[observer]['neighbor_trust'][sender]
+        stats = trust_map[sender]
         if sender_was_truthful:
             stats['alpha'] += 1
         else:
@@ -63,94 +76,110 @@ class SocialNetwork:
 
     def rewire_network(self):
         """
-        Rewire edges whose average reliability falls below threshold.
-        Each removed undirected edge produces exactly one reconnection
-        attempt per endpoint.
+        Fully vectorized rewiring.
+        1. Identify weak edges to cut.
+        2. Calculate global reputation probabilities ONCE.
+        3. Batch sample new connections.
         """
+
+        # 1. Get all edges as a list
+        edges = list(self.G.edges())
+        num_edges = len(edges)
+        if num_edges == 0:
+            return
+
+        edge_rands = self.rng.random(num_edges, dtype=np.float32)
+
         edges_to_remove = []
-
-        # --------------------------------------------------
-        # 1️⃣ Identify weak edges (edges() already unique)
-        # --------------------------------------------------
-        for u, v in self.G.edges():
-
-            trust_uv = self.G.nodes[u]["neighbor_trust"].get(v)
-            trust_vu = self.G.nodes[v]["neighbor_trust"].get(u)
-
-            # Safety check (edge might be partially cleaned)
-            if not trust_uv or not trust_vu:
+        nodes_seeking_new_connection = []
+        nodes_data = self.G.nodes
+        
+        # iterate existing edges
+        for i, (u, v) in enumerate(edges):
+            trust_u = nodes_data[u]['neighbor_trust'].get(v)
+            trust_v = nodes_data[v]['neighbor_trust'].get(u)
+            if not trust_u or not trust_v:
                 continue
 
-            rel_uv = AgentLogic.get_neighbor_reliability(
-                trust_uv["alpha"], trust_uv["beta"]
-            )
+            # Calculate Reliability
+            # Inline the math if AgentLogic overhead is high, but method call usually fine
+            rel_u_v = trust_u['alpha'] / (trust_u['alpha'] + trust_u['beta'])
+            rel_v_u = trust_v['alpha'] / (trust_v['alpha'] + trust_v['beta'])
 
-            rel_vu = AgentLogic.get_neighbor_reliability(
-                trust_vu["alpha"], trust_vu["beta"]
-            )
-
-            if rel_uv < self.cfg.rewire_trust_threshold or rel_vu < self.cfg.rewire_trust_threshold:
+            # Logic: If the *weaker* link is below random threshold, cut.
+            if rel_u_v < rel_v_u:
+                weakest_val = rel_u_v
+                node_to_rewire = u
+            else:
+                weakest_val = rel_v_u
+                node_to_rewire = v
+            
+            # probabilistic cutting
+            if edge_rands[i] < (1.0 - weakest_val):
                 edges_to_remove.append((u, v))
+                nodes_seeking_new_connection.append(node_to_rewire)
 
-        # --------------------------------------------------
-        # 2️⃣ Remove weak edges + clean trust memory
-        # --------------------------------------------------
-        nodes_seeking = set()
-
+        # Apply Cuts
         for u, v in edges_to_remove:
             if self.G.has_edge(u, v):
                 self.G.remove_edge(u, v)
+                # Cleanup trust dicts to save memory
+                nodes_data[u]['neighbor_trust'].pop(v, None)
+                nodes_data[v]['neighbor_trust'].pop(u, None)
 
-            # Clean trust memory both directions
-            self.G.nodes[u]["neighbor_trust"].pop(v, None)
-            self.G.nodes[v]["neighbor_trust"].pop(u, None)
+        # Add Isolated Nodes (Degree 0)
+        deg = dict(self.G.degree())
+        for n, d in deg.items():
+            if d == 0:
+                nodes_seeking_new_connection.append(n)
 
-            nodes_seeking.add(u)
-            nodes_seeking.add(v)
+        # Return early if nothing to do
+        if not nodes_seeking_new_connection:
+            return
 
-        # --------------------------------------------------
-        # 3️⃣ Each endpoint seeks ONE new partner
-        # --------------------------------------------------
+        # --- Phase 2: Vectorized Selection ---
+        
+        # 1. Prepare Global Arrays ONCE (not per node)
         all_nodes = list(self.G.nodes())
+        n_total = len(all_nodes)
+        
+        # Extract reputations efficiently
+        reps = np.array([nodes_data[n]['reputation'] for n in all_nodes])
+        
+        # Normalize / Softmax
+        if reps.std() > 1e-9:
+            reps_norm = (reps - reps.mean()) / reps.std()
+        else:
+            reps_norm = np.zeros_like(reps)
+            
+        weights = np.exp(self.cfg.reputation_attachment_strength * reps_norm)
+        probs = weights / weights.sum()
 
-        for u in nodes_seeking:
-
-            # Candidates: not self, not already connected
-            potential = [
-                v for v in all_nodes
-                if v != u and not self.G.has_edge(u, v)
-            ]
-
-            if not potential:
-                continue
-
-            if self.cfg.use_reputation_attachment:
-                gamma = self.cfg.reputation_attachment_strength
-                
-                # Get reputations of candidates
-                reputations = np.array([self.G.nodes[v]["reputation"] for v in potential])
-                std = np.std(reputations)
-                if std < 1e-8:
-                    normalized = np.zeros_like(reputations)
-                else:
-                    normalized = reputations / (2 * std)
-                
-                # Softmax weights
-                weights = np.exp(gamma * normalized)
-                
-                # Avoid all-zero or overflow issues
-                if weights.sum() == 0:
-                    probs = np.ones_like(weights) / len(weights)
-                else:
-                    probs = weights / weights.sum()
-                
-                v_new = self.rng.choice(potential, p=probs)
-            else:
-                v_new = self.rng.choice(potential)
-
-            self.G.add_edge(u, v_new)
-
-            # Initialize trust BOTH ways using existing helper
-            self.init_edge_trust(u, v_new)
-            self.init_edge_trust(v_new, u)
-
+        # 2. Batch Sample Targets
+        # We need k targets. We sample k * 1.5 to account for self-loops/collisions
+        # which we will discard. This is "Rejection Sampling".
+        num_needed = len(nodes_seeking_new_connection)
+        
+        # Draw indices instead of node objects for speed
+        target_indices = self.rng.choice(
+            n_total, 
+            size=num_needed, 
+            p=probs, 
+            replace=True # Preferential attachment allows multiple incoming
+        )
+        
+        # --- Phase 3: Wiring ---
+        for i, u in enumerate(nodes_seeking_new_connection):
+            target_idx = target_indices[i]
+            v = all_nodes[target_idx]
+            
+            # Validity Checks (O(1) usually)
+            if u == v: 
+                continue # Skip self-loops
+            if self.G.has_edge(u, v): 
+                continue # Skip existing edges
+            
+            # Add Connection
+            self.G.add_edge(u, v)
+            self._init_trust_one_way(u, v)
+            self._init_trust_one_way(v, u)

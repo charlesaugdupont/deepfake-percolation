@@ -11,12 +11,13 @@ class Simulation:
         self.rng = np.random.default_rng(self.cfg.random_seed)
         self.net = SocialNetwork(config, self.rng)
         self.cascade_count = 0
-        self.last_cascade_edges = [] # For visualization
+        self.last_cascade_edges = []
+        self.all_nodes = list(self.net.G.nodes())
 
-    def run_single_cascade(self):
+    def (self):
         self.cascade_count += 1
         is_fake = self.rng.random() < self.cfg.global_fake_prob
-        seed_node = self.rng.choice(list(self.net.G.nodes()))
+        seed_node = self.rng.choice(self.all_nodes)
         
         queue = collections.deque([(seed_node, None)])
         visited = {seed_node}
@@ -135,10 +136,9 @@ class Simulation:
         self._apply_updates(actions_log, visited, parent_map, is_fake)
 
         self.last_cascade_edges = cascade_edges
-        
-        # --- Optional Rewiring ---
-        if self.cfg.enable_rewiring and (self.cascade_count % self.cfg.rewiring_interval == 0):
-            self.net.rewire_network()
+
+        # stochastic rewiring after each cascasde
+        self.net.rewire_network()
         
         return {
             'is_fake': is_fake,

@@ -30,10 +30,5 @@ class SimConfig:
     global_false_prior_beta: float = 2.0 # initial global true prevalence = 3 / (3 + 2) = 0.6
 
     # --- Rewiring ---
-    enable_rewiring: bool = False
-    # If trust < threshold, break link
-    rewire_trust_threshold: float = 0.3 
-    # How often to check for rewiring (every N cascades)
-    rewiring_interval: int = 1
+    enable_rewiring: bool = True
     reputation_attachment_strength: float = 1.0 # Higher means more likely to connect to high-rep agents
-    use_reputation_attachment: bool = True # If False, new connections are random regardless of reputation

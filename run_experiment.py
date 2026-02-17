@@ -46,8 +46,6 @@ def run_heatmap_experiment():
                     rep_debunk=0.0,
                     verification_accuracy=0.9,
                     enable_rewiring=True,
-                    rewire_trust_threshold=0.25,
-                    rewiring_interval=10,
                     random_seed=cell_rng.integers(0, 1_000_000_000)
                 )
                 

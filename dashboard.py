@@ -73,10 +73,7 @@ global_prevalence_prior_beta = st.sidebar.slider("Prior Global Trust (False Weig
 st.sidebar.divider()
 st.sidebar.markdown("### Rewiring")
 rewiring = st.sidebar.checkbox("Enable Rewiring", value=False)
-rewiring_interval = st.sidebar.slider("Rewiring Interval", 1, 10, 1)
-rewire_trust_threshold = st.sidebar.slider("Rewiring Trust Threshold", 0.0, 1.0, 0.3, 0.02)
 reputation_attachment_strength = st.sidebar.slider("Reputation Attachment Strength", 0.0, 5.0, 1.0, 0.05)
-use_reputation_attachment = st.sidebar.checkbox("Use Reputation Attachment", value=True)
 
 # ============================================================
 # BUILD CONFIG
@@ -91,8 +88,6 @@ cfg = SimConfig(
     rep_loss=L,
     rep_debunk=D,
     enable_rewiring=rewiring,
-    rewiring_interval=rewiring_interval,
-    rewire_trust_threshold=rewire_trust_threshold,
     verification_accuracy=verification_accuracy,
     neighbor_truth_prior_alpha=neighbor_truth_prior_alpha,
     neighbor_false_prior_beta=neighbor_false_prior_beta,
