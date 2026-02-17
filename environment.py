@@ -1,4 +1,6 @@
 import networkx as nx
+import numpy as np
+
 from config import SimConfig
 from agent import AgentLogic
 
@@ -122,7 +124,29 @@ class SocialNetwork:
             if not potential:
                 continue
 
-            v_new = self.rng.choice(potential)
+            if self.cfg.use_reputation_attachment:
+                gamma = self.cfg.reputation_attachment_strength
+                
+                # Get reputations of candidates
+                reputations = np.array([self.G.nodes[v]["reputation"] for v in potential])
+                std = np.std(reputations)
+                if std < 1e-8:
+                    normalized = np.zeros_like(reputations)
+                else:
+                    normalized = reputations / (2 * std)
+                
+                # Softmax weights
+                weights = np.exp(gamma * normalized)
+                
+                # Avoid all-zero or overflow issues
+                if weights.sum() == 0:
+                    probs = np.ones_like(weights) / len(weights)
+                else:
+                    probs = weights / weights.sum()
+                
+                v_new = self.rng.choice(potential, p=probs)
+            else:
+                v_new = self.rng.choice(potential)
 
             self.G.add_edge(u, v_new)
 

@@ -75,6 +75,8 @@ st.sidebar.markdown("### Rewiring")
 rewiring = st.sidebar.checkbox("Enable Rewiring", value=False)
 rewiring_interval = st.sidebar.slider("Rewiring Interval", 1, 10, 1)
 rewire_trust_threshold = st.sidebar.slider("Rewiring Trust Threshold", 0.0, 1.0, 0.3, 0.02)
+reputation_attachment_strength = st.sidebar.slider("Reputation Attachment Strength", 0.0, 5.0, 1.0, 0.05)
+use_reputation_attachment = st.sidebar.checkbox("Use Reputation Attachment", value=True)
 
 # ============================================================
 # BUILD CONFIG
