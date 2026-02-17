@@ -14,7 +14,7 @@ class Simulation:
         self.last_cascade_edges = []
         self.all_nodes = list(self.net.G.nodes())
 
-    def (self):
+    def run_single_cascade(self):
         self.cascade_count += 1
         is_fake = self.rng.random() < self.cfg.global_fake_prob
         seed_node = self.rng.choice(self.all_nodes)

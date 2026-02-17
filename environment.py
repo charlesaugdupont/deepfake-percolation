@@ -7,7 +7,7 @@ from agent import AgentLogic
 class SocialNetwork:
     def __init__(self, config: SimConfig, rng):
         self.cfg = config
-        self.rng = rng # Expecting numpy.random.Generator
+        self.rng = rng
 
         self.G = nx.barabasi_albert_graph(
             n=config.num_agents,
