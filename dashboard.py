@@ -54,7 +54,6 @@ st.sidebar.markdown("### Payoffs")
 C = st.sidebar.slider("Verification Cost", 0.0, 5.0, 1.0, 0.05)
 G = st.sidebar.slider("Reputation Gain", 0.0, 5.0, 1.0, 0.05)
 L = st.sidebar.slider("Reputation Loss", 0.0, 5.0, 2.0, 0.05)
-D = st.sidebar.slider("Debunk Reward", 0.0, 5.0, 0.5, 0.05)
 
 # --- Verification Technology ---
 st.sidebar.divider()
@@ -86,7 +85,6 @@ cfg = SimConfig(
     verification_cost=C,
     rep_gain=G,
     rep_loss=L,
-    rep_debunk=D,
     enable_rewiring=rewiring,
     verification_accuracy=verification_accuracy,
     neighbor_truth_prior_alpha=neighbor_truth_prior_alpha,

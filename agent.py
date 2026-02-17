@@ -35,9 +35,6 @@ class AgentLogic:
         
         # 2. We Share, and it is FAKE
         u_share_if_fake = -cfg.rep_loss * k
-        
-        # 3. We Debunk (Only happens if we find a Fake)
-        u_debunk = cfg.rep_debunk * k
 
         # --- Evaluate Actions ---
         
@@ -55,14 +52,20 @@ class AgentLogic:
         
         # Branch B: Item is actually FAKE (prob 1-p_true)
         # We verify. Two sub-outcomes:
-        #   1. Success: We detect Fake -> Debunk.
+        #   1. Success: We detect Fake.
         #   2. Failure: We think it's True -> Share -> GET PUNISHED.
-        exp_u_given_fake = (ver_acc * u_debunk) + ((1 - ver_acc) * u_share_if_fake)
+        exp_u_given_fake = (1 - ver_acc) * u_share_if_fake
         
         u_verify = u_verify_cost + (p_true * exp_u_given_true) + ((1 - p_true) * exp_u_given_fake)
         
-        # --- Maximize ---
-        options = {'DISCARD': u_discard, 'SHARE': u_share, 'VERIFY': u_verify}
-        best_action = max(options, key=options.get)
-        
-        return best_action
+        # Find the action with the highest expected utility
+        if u_share > u_discard:
+            if u_share > u_verify:
+                return 'SHARE'
+            else:
+                return 'VERIFY'
+        else:
+            if u_discard >= u_verify:
+                return 'DISCARD'
+            else:
+                return 'VERIFY'

@@ -66,10 +66,8 @@ class Simulation:
             action = AgentLogic.decide(p_true, reach, self.cfg)
             
             # --- Execution ---
-            
             if action == 'DISCARD':
                 pass 
-                
             elif action == 'SHARE':
                 # Blind Share
                 n_shares += 1
@@ -107,11 +105,7 @@ class Simulation:
                     detected_as_fake = False
 
                 if detected_as_fake:
-                    # Successful Debunk
                     n_debunks += 1
-                    actions_log[current] = ('debunked', reach)
-                    total_payoff += (self.cfg.rep_debunk * reach)
-                    # Do NOT propagate
                 else:
                     # Shared (either correctly or via False Negative)
                     n_shares += 1
@@ -159,8 +153,6 @@ class Simulation:
                 self.net.G.nodes[agent]['reputation'] += (self.cfg.rep_gain * marginal_reach)
             elif action == 'shared_fake':
                 self.net.G.nodes[agent]['reputation'] -= (self.cfg.rep_loss * marginal_reach)
-            elif action == 'debunked':
-                self.net.G.nodes[agent]['reputation'] += (self.cfg.rep_debunk * marginal_reach)
 
         # --------------------------------------------------
         # 2️⃣ Global belief updates (ALL who saw item)

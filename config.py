@@ -17,7 +17,6 @@ class SimConfig:
     verification_cost: float = 0.5
     rep_gain: float = 1.0       # Gain for sharing Truth
     rep_loss: float = 2.0       # Loss for sharing Fake
-    rep_debunk: float = 0.5     # Gain for Debunking
     
     # --- Verification Technology ---
     # Probability of correctly identifying a Fake as Fake.

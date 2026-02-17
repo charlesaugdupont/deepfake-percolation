@@ -43,7 +43,6 @@ def run_heatmap_experiment():
                     global_fake_prob=prev,
                     rep_gain=1.0,
                     rep_loss=2.0,
-                    rep_debunk=0.0,
                     verification_accuracy=0.9,
                     enable_rewiring=True,
                     random_seed=cell_rng.integers(0, 1_000_000_000)
@@ -117,7 +116,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im4, ax=ax4)
     plt.tight_layout()
-    plt.savefig("results.png")
+    plt.savefig("results_nodebunk.png")
     plt.show()
 
 if __name__ == "__main__":
