@@ -6,16 +6,10 @@ import numpy as np
 from config import SimConfig
 from simulation import Simulation
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
+# configure page
 st.set_page_config(layout="wide")
 
-# ============================================================
-# SESSION STATE INIT
-# ============================================================
-
+# initialize session state
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
     st.session_state.sim = None
@@ -33,34 +27,30 @@ if "initialized" not in st.session_state:
     st.session_state.fake_count = 0
     st.session_state.welfare_total = 0.0
 
-
-# ============================================================
-# SIDEBAR — CLEAN PARAM CONTROLS
-# ============================================================
-
+# sidebar parameters
 st.sidebar.title("Parameters")
 random_seed = st.sidebar.number_input("Random Seed", 0, 1_000_000, 42, 1)
 
-# --- Network structure ---
+# network structure 
 st.sidebar.divider()
 st.sidebar.markdown("### Network / Global")
 N = st.sidebar.slider("N", 10, 500, 200, step=5)
 m = st.sidebar.slider("m", 1, 20, 2)
 global_fake_prob = st.sidebar.slider("Fake Prevalence", 0.0, 1.0, 0.5, 0.02)
 
-# --- Payoffs ---
+# payoffs 
 st.sidebar.divider()
 st.sidebar.markdown("### Payoffs")
 C = st.sidebar.slider("Verification Cost", 0.0, 5.0, 1.0, 0.05)
 G = st.sidebar.slider("Reputation Gain", 0.0, 5.0, 1.0, 0.05)
 L = st.sidebar.slider("Reputation Loss", 0.0, 5.0, 2.0, 0.05)
 
-# --- Verification Technology ---
+# verification technology 
 st.sidebar.divider()
 st.sidebar.markdown("### Verification Technology")
 verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.9, 0.01)
 
-# --- Agent Psychology ---
+# agent psychology 
 st.sidebar.divider()
 st.sidebar.markdown("### Agent Psychology")
 neighbor_truth_prior_alpha = st.sidebar.slider("Prior Neighbor Trust (True Weight)", 1, 5, 3, 1)
@@ -68,16 +58,13 @@ neighbor_false_prior_beta = st.sidebar.slider("Prior Neighbor Trust (False Weigh
 global_prevalence_prior_alpha = st.sidebar.slider("Prior Global Trust (True Weight)", 1, 5, 3, 1)
 global_prevalence_prior_beta = st.sidebar.slider("Prior Global Trust (False Weight)", 1, 5, 2, 1)
 
-# --- Rewiring ---
+# rewiring 
 st.sidebar.divider()
 st.sidebar.markdown("### Rewiring")
 rewiring = st.sidebar.checkbox("Enable Rewiring", value=False)
 reputation_attachment_strength = st.sidebar.slider("Reputation Attachment Strength", 0.0, 5.0, 1.0, 0.05)
 
-# ============================================================
-# BUILD CONFIG
-# ============================================================
-
+# set up config
 cfg = SimConfig(
     num_agents=N,
     num_connections=m,
@@ -113,26 +100,21 @@ if st.session_state.sim is None or st.session_state.sim.cfg != cfg:
 
 sim = st.session_state.sim
 
-
-# ============================================================
-# CONTROLS
-# ============================================================
-
 c1, c2, c3 = st.columns(3)
 
-# --- Step ---
+# step 
 if c1.button("⏭ Step"):
     run_step = True
 else:
     run_step = False
 
-# --- Run Full Simulation ---
+# run full simulation 
 if c2.button("▶ Run Full Simulation"):
     run_full = True
 else:
     run_full = False
 
-# --- Reset ---
+# Reset 
 if c3.button("🔄 Reset"):
     st.session_state.sim = Simulation(cfg)
     st.session_state.cascade_id = 0
@@ -147,18 +129,14 @@ if c3.button("🔄 Reset"):
     st.session_state.welfare_total = 0.0
     st.stop()
 
-
-# ============================================================
-# RUN LOGIC
-# ============================================================
-
+# run logic
 MAX_CASCADES = 100
 
 def run_single_step():
     stats = sim.run_single_cascade()
     st.session_state.cascade_id += 1
 
-    # --- Verification running average ---
+    # verification running average 
     verify_rate = (
         stats["verifications"] / stats["receivers"]
         if stats["receivers"] > 0 else 0
@@ -174,7 +152,7 @@ def run_single_step():
 
     st.session_state.verify_series.append(running_avg)
 
-    # --- Cascade Size ---
+    # cascade size 
     cascade_size = stats["shares"] / N
 
     if stats["is_fake"]:
@@ -197,7 +175,7 @@ def run_single_step():
     st.session_state.true_series.append(true_avg)
     st.session_state.fake_series.append(fake_avg)
 
-    # --- Welfare running average ---
+    # welfare running average 
     st.session_state.welfare_total += stats["utility"]
     welfare_avg = st.session_state.welfare_total / t
     st.session_state.welfare_series.append(welfare_avg)
@@ -213,18 +191,10 @@ if run_step:
 if run_full:
     run_full_simulation(MAX_CASCADES)
 
-
-# ============================================================
-# LAYOUT
-# ============================================================
-
+# configure layout
 left, right = st.columns([3, 2])
 
-
-# ============================================================
-# LARGE METRIC PLOTS
-# ============================================================
-
+# metric plots
 G_net = sim.net.G
 
 with left:
@@ -278,11 +248,7 @@ with left:
     plt.tight_layout()
     st.pyplot(fig, width="stretch")
 
-
-# ============================================================
-# NETWORK WITH REPUTATION COLORING
-# ============================================================
-
+# color network by reputation
 with right:
     fig_net, ax_net = plt.subplots(figsize=(10, 10))
 
@@ -340,9 +306,6 @@ with right:
     st.pyplot(fig_net, width="stretch")
 
 
-# ============================================================
-# PROGRESS
-# ============================================================
-
+# progress
 progress = st.session_state.cascade_id / MAX_CASCADES
 st.progress(min(progress, 1.0))

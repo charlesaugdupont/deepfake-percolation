@@ -77,7 +77,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     extent = [costs.min(), costs.max(), prevalences.min(), prevalences.max()]
     origin = 'lower'
 
-    # 1. Fake Cascade Size
+    # Fake Cascade Size
     ax1 = axes[0, 0]
     im1 = ax1.imshow(fake, extent=extent, origin=origin, aspect='auto', cmap='Reds')
     ax1.set_title(r'Avg Fake Cascade Size (% of Net)')
@@ -85,7 +85,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax1.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im1, ax=ax1)
 
-    # 2. True Cascade Size
+    # True Cascade Size
     ax2 = axes[0, 1]
     im2 = ax2.imshow(true, extent=extent, origin=origin, aspect='auto', cmap='Greens')
     ax2.set_title(r'Avg True Cascade Size (% of Net)')
@@ -93,7 +93,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax2.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im2, ax=ax2)
 
-    # 3. Verification Rate
+    # Verification Rate
     ax3 = axes[1, 0]
     im3 = ax3.imshow(verify, extent=extent, origin=origin, aspect='auto', cmap='Blues') 
     ax3.set_title(r'Verification Rate (Verifies / Receptions)')
@@ -101,10 +101,10 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax3.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im3, ax=ax3)
 
-    # 4. Social Welfare (Diverging)
+    # Social Welfare (Diverging)
     ax4 = axes[1, 1]
     vmin, vmax = welfare.min(), welfare.max()
-    # Handle cases where all values are positive or all negative to avoid norm errors
+    # handle cases where all values are positive or all negative to avoid norm errors
     if vmin >= 0: vmin = -0.1
     if vmax <= 0: vmax = 0.1
     
@@ -116,7 +116,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im4, ax=ax4)
     plt.tight_layout()
-    plt.savefig("results_nodebunk.png")
+    plt.savefig("results.png")
     plt.show()
 
 if __name__ == "__main__":

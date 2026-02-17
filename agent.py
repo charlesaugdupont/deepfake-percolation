@@ -28,7 +28,7 @@ class AgentLogic:
         k = reach
         ver_acc = cfg.verification_accuracy
         
-        # --- Pre-calculate Utility of Outcomes ---
+        # Pre-calculate Utility of Outcomes
         
         # 1. We Share, and it is TRUE
         u_share_if_true = cfg.rep_gain * k
@@ -36,7 +36,7 @@ class AgentLogic:
         # 2. We Share, and it is FAKE
         u_share_if_fake = -cfg.rep_loss * k
 
-        # --- Evaluate Actions ---
+        # Evaluate Actions 
         
         # Action: DISCARD
         u_discard = 0.0

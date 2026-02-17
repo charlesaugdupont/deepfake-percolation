@@ -24,8 +24,6 @@ class Simulation:
         parent_map = {}
         
         # Store tuple: (ActionType, MarginalReach)
-        # This fixes the "Reach Bug" by storing exactly how many people 
-        # were susceptible when the agent made the decision.
         actions_log = {} 
         
         n_shares = 0
@@ -39,7 +37,7 @@ class Simulation:
             current, sender = queue.popleft()
             n_receivers += 1
             
-            # --- Belief Formation ---
+            # belief formation 
             if sender is None:
                 reliability = 0.5
             else:
@@ -55,32 +53,28 @@ class Simulation:
             p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
             p_true = round(p_true, 5)
 
-            # --- Marginal Reach Calculation ---
-            # How many neighbors have NOT seen this item yet?
+            # agents that have not seen the item
             reach = self.net.get_reach(current, visited)
             
-            # Optimization: If reach is 0, rational agents usually Discard. 
-            # But we run logic anyway for completeness.
-            
-            # --- Decision ---
+            # decision
             action = AgentLogic.decide(p_true, reach, self.cfg)
             
-            # --- Execution ---
+            # execution
             if action == 'DISCARD':
-                pass 
+                pass
+            
             elif action == 'SHARE':
-                # Blind Share
                 n_shares += 1
                 outcome_type = 'shared_fake' if is_fake else 'shared_true'
                 actions_log[current] = (outcome_type, reach)
                 
-                # Payoff Calculation (based on actual reality)
+                # calculate payoff
                 if is_fake:
                     total_payoff -= (self.cfg.rep_loss * reach)
                 else:
                     total_payoff += (self.cfg.rep_gain * reach)
 
-                # Queue Neighbors
+                # queue neighbors
                 for nbr in self.net.G.neighbors(current):
                     if nbr not in visited:
                         visited.add(nbr)
@@ -92,16 +86,16 @@ class Simulation:
                 n_verifications += 1
                 total_payoff -= self.cfg.verification_cost
                 
-                # --- NOISY DETECTION LOGIC ---
+                # noisy detection
                 detected_as_fake = False
                 if is_fake:
-                    # Roll for detection accuracy
+                    # roll for detection accuracy
                     if self.rng.random() < self.cfg.verification_accuracy:
                         detected_as_fake = True
                     else:
-                        detected_as_fake = False # FALSE NEGATIVE!
+                        detected_as_fake = False # false negative
                 else:
-                    # Assuming no False Positives for simplicity (Truth is recognized as Truth)
+                    # assuming no False Positives for simplicity
                     detected_as_fake = False
 
                 if detected_as_fake:
@@ -126,7 +120,7 @@ class Simulation:
                             parent_map[nbr] = current
                             cascade_edges.append((current, nbr))
 
-        # --- Post-Cascade Updates ---
+        # Post-Cascade Updates 
         self._apply_updates(actions_log, visited, parent_map, is_fake)
 
         self.last_cascade_edges = cascade_edges
@@ -145,24 +139,18 @@ class Simulation:
         }
 
     def _apply_updates(self, actions_log, visited, parent_map, item_is_fake):
-        # --------------------------------------------------
-        # 1️⃣ Reputation updates (only agents who acted)
-        # --------------------------------------------------
+        # reputation updates (only agents who acted)
         for agent, (action, marginal_reach) in actions_log.items():
             if action == 'shared_true':
                 self.net.G.nodes[agent]['reputation'] += (self.cfg.rep_gain * marginal_reach)
             elif action == 'shared_fake':
                 self.net.G.nodes[agent]['reputation'] -= (self.cfg.rep_loss * marginal_reach)
 
-        # --------------------------------------------------
-        # 2️⃣ Global belief updates (ALL who saw item)
-        # --------------------------------------------------
+        # global belief updates (ALL who saw item)
         for agent in visited:
             self.net.update_global_belief(agent, item_is_fake)
 
-        # --------------------------------------------------
-        # 3️⃣ Trust updates (receiver -> actual sender only)
-        # --------------------------------------------------
+        # trust updates (receiver -> actual sender only)
         for receiver, sender in parent_map.items():
             if item_is_fake:
                 self.net.update_trust(receiver, sender, False)
