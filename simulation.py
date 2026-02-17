@@ -51,7 +51,6 @@ class Simulation:
             stats = self.net.G.nodes[current]['true_belief']
             global_true_est = stats['alpha'] / (stats['alpha'] + stats['beta'])
             p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
-            p_true = round(p_true, 5)
 
             # agents that have not seen the item
             reach = self.net.get_reach(current, visited)
@@ -126,8 +125,9 @@ class Simulation:
         self.last_cascade_edges = cascade_edges
 
         # stochastic rewiring after each cascasde
-        self.net.rewire_network()
-        
+        if self.cfg.enable_rewiring and self.cascade_count % self.cfg.rewiring_interval == 0:
+            self.net.rewire_network()
+
         return {
             'is_fake': is_fake,
             'size': len(visited),

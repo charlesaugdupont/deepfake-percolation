@@ -62,108 +62,62 @@ class SocialNetwork:
             stats['alpha'] += 1
 
     def rewire_network(self):
-        # get all edges as a list
-        edges = list(self.G.edges())
-        num_edges = len(edges)
+        edges_to_check = list(self.G.edges())
+        num_edges = len(edges_to_check)
         if num_edges == 0:
             return
 
         edge_rands = self.rng.random(num_edges, dtype=np.float32)
-        edges_to_remove = []
-        nodes_seeking_new_connection = []
-        nodes_data = self.G.nodes
-        
-        # iterate over existing edges
-        for i, (u, v) in enumerate(edges):
-            trust_u = nodes_data[u]['neighbor_trust'].get(v)
-            trust_v = nodes_data[v]['neighbor_trust'].get(u)
-            if not trust_u or not trust_v:
+        nodes = self.G.nodes
+
+        for i, (u, v) in enumerate(edges_to_check):
+            if not self.G.has_edge(u, v):
                 continue
 
-            # calculate trust
-            rel_u_v = trust_u['alpha'] / (trust_u['alpha'] + trust_u['beta'])
-            rel_v_u = trust_v['alpha'] / (trust_v['alpha'] + trust_v['beta'])
+            trust_u_on_v = nodes[u]['neighbor_trust'].get(v)
+            trust_v_on_u = nodes[v]['neighbor_trust'].get(u)
+            if not trust_u_on_v or not trust_v_on_u:
+                continue
+
+            rel_u_v = trust_u_on_v['alpha'] / (trust_u_on_v['alpha'] + trust_u_on_v['beta'])
+            rel_v_u = trust_v_on_u['alpha'] / (trust_v_on_u['alpha'] + trust_v_on_u['beta'])
 
             if rel_u_v < rel_v_u:
-                weakest_val = rel_u_v
-                node_to_rewire = u
+                weakest_trust_val = rel_u_v
+                rewiring_node, passive_node = u, v
             else:
-                weakest_val = rel_v_u
-                node_to_rewire = v
-            
-            # probabilistic cutting
-            if edge_rands[i] < (1.0 - weakest_val):
-                edges_to_remove.append((u, v))
-                nodes_seeking_new_connection.append(node_to_rewire)
+                weakest_trust_val = rel_v_u
+                rewiring_node, passive_node = v, u
 
-        # apply cuts
-        for u, v in edges_to_remove:
-            if self.G.has_edge(u, v):
-                self.G.remove_edge(u, v)
-                # clean up trust dicts to save memory
-                nodes_data[u]['neighbor_trust'].pop(v, None)
-                nodes_data[v]['neighbor_trust'].pop(u, None)
+            if edge_rands[i] < (1.0 - weakest_trust_val):
+                self.G.remove_edge(rewiring_node, passive_node)
+                nodes[rewiring_node]['neighbor_trust'].pop(passive_node, None)
+                nodes[passive_node]['neighbor_trust'].pop(rewiring_node, None)
 
-        # connect isolated nodes
-        deg = dict(self.G.degree())
-        for n, d in deg.items():
-            if d == 0:
-                nodes_seeking_new_connection.append(n)
-
-        if not nodes_seeking_new_connection:
-            return
-        
-        all_nodes = list(self.G.nodes())
-        n_total = len(all_nodes)
-        
-        # extract reputations
-        reps = np.array([nodes_data[n]['reputation'] for n in all_nodes])
-        
-        # normalize
-        if reps.std() > 1e-9:
-            reps_norm = (reps - reps.mean()) / reps.std()
-        else:
-            reps_norm = np.zeros_like(reps)
-            
-        weights = np.exp(self.cfg.reputation_attachment_strength * reps_norm)
-        probs = weights / weights.sum()
-
-        # rejection sampling
-        num_needed = len(nodes_seeking_new_connection)
-        
-        # draw indices instead of node objects for speed
-        buffer_size = int(5 * num_needed)
-        target_indices = self.rng.choice(
-            n_total, 
-            size=buffer_size,
-            p=probs, 
-            replace=True
-        )
-        
-        # rewire
-        idx = 0
-        for u in nodes_seeking_new_connection:
-            while True:
-                if idx >= len(target_indices):
-                    extra_indices = self.rng.choice(
-                        n_total, 
-                        size=buffer_size, 
-                        p=probs, 
-                        replace=True
-                    )
-                    target_indices = np.concatenate([target_indices, extra_indices])
-                    idx = 0
-
-                target_idx = target_indices[idx]
-                idx += 1
-                v = all_nodes[target_idx]
-                if u == v: 
-                    continue # skip self-loop
-                elif self.G.has_edge(u, v):
-                    continue # skip existing edges
+                if self.G.degree(passive_node) == 0:
+                    self.rewire_node(passive_node, nodes, node_to_avoid=rewiring_node)
                 else:
-                    break
-            # connect and initialize trust
-            self.G.add_edge(u, v)
-            self._init_trust_one_way(u, v)
-            self._init_trust_one_way(v, u)
+                    self.rewire_node(rewiring_node, nodes, node_to_avoid=passive_node)
+
+    def rewire_node(self, u, nodes, node_to_avoid=None):
+        """
+        Adds one new edge for node u.
+        """
+        candidates = list(set(self.G.nodes) - set(self.G.neighbors(u)) - {u} - {node_to_avoid})
+        if len(candidates) == 0:
+            return
+        reputation = np.array([nodes[n]['reputation'] for n in candidates], dtype=np.float32)
+
+        # because reputation can be negative, we do min-max normalization to get non-negative weights
+        min_rep = reputation.min()
+        max_rep = reputation.max()
+        weights = 1e-6 + (reputation - min_rep) / (max_rep - min_rep + 1e-6)  # add small epsilon to avoid division by zero
+
+        total_weight = weights.sum()
+        probs = weights / total_weight
+
+        choice = self.rng.choice(len(candidates), p=probs)        
+        v = candidates[choice]
+        self.G.add_edge(u, v)
+        self._init_trust_one_way(u, v)
+        self._init_trust_one_way(v, u)

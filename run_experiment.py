@@ -6,10 +6,9 @@ from config import SimConfig
 from simulation import Simulation
 
 def run_heatmap_experiment():
-    # Grid Settings
-    RESOLUTION = 20           
-    NUM_TRIALS = 20           # Fresh networks per pixel
-    CASCADES_PER_TRIAL = 50   # Longer episodes to allow rewiring to happen
+    RESOLUTION = 20
+    NUM_TRIALS = 8
+    CASCADES_PER_TRIAL = 50
     MASTER_SEED = 12345
     master_rng = np.random.default_rng(MASTER_SEED)
     
@@ -45,6 +44,7 @@ def run_heatmap_experiment():
                     rep_loss=2.0,
                     verification_accuracy=0.9,
                     enable_rewiring=True,
+                    rewiring_interval=10,
                     random_seed=cell_rng.integers(0, 1_000_000_000)
                 )
                 
@@ -116,7 +116,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im4, ax=ax4)
     plt.tight_layout()
-    plt.savefig("results.png")
+    plt.savefig("results_refactored.png")
     plt.show()
 
 if __name__ == "__main__":

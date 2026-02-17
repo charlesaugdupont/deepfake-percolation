@@ -61,8 +61,8 @@ global_prevalence_prior_beta = st.sidebar.slider("Prior Global Trust (False Weig
 # rewiring 
 st.sidebar.divider()
 st.sidebar.markdown("### Rewiring")
-rewiring = st.sidebar.checkbox("Enable Rewiring", value=False)
-reputation_attachment_strength = st.sidebar.slider("Reputation Attachment Strength", 0.0, 5.0, 1.0, 0.05)
+rewiring = st.sidebar.checkbox("Enable Rewiring", value=True)
+rewiring_interval = st.sidebar.slider("Rewiring Interval", 1, 20, 10, 1)
 
 # set up config
 cfg = SimConfig(
@@ -73,6 +73,7 @@ cfg = SimConfig(
     rep_gain=G,
     rep_loss=L,
     enable_rewiring=rewiring,
+    rewiring_interval=rewiring_interval,
     verification_accuracy=verification_accuracy,
     neighbor_truth_prior_alpha=neighbor_truth_prior_alpha,
     neighbor_false_prior_beta=neighbor_false_prior_beta,
@@ -189,7 +190,9 @@ if run_step:
     run_single_step()
 
 if run_full:
+    print(len(sim.net.G.edges()))
     run_full_simulation(MAX_CASCADES)
+    print(len(sim.net.G.edges()))
 
 # configure layout
 left, right = st.columns([3, 2])

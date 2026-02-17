@@ -30,4 +30,4 @@ class SimConfig:
 
     # Rewiring 
     enable_rewiring: bool = True
-    reputation_attachment_strength: float = 1.0 # Higher means more likely to connect to high-rep agents
+    rewiring_interval: int = 10
