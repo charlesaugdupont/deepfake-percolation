@@ -132,22 +132,37 @@ class SocialNetwork:
         num_needed = len(nodes_seeking_new_connection)
         
         # draw indices instead of node objects for speed
+        buffer_size = int(5 * num_needed)
         target_indices = self.rng.choice(
             n_total, 
-            size=int(1.5 * num_needed),
+            size=buffer_size,
             p=probs, 
             replace=True
         )
         
         # rewire
-        for i, u in enumerate(nodes_seeking_new_connection):
-            target_idx = target_indices[i]
-            v = all_nodes[target_idx]
-            if u == v: 
-                continue # skip self-loops
-            if self.G.has_edge(u, v): 
-                continue # skip existing edges
-            
+        idx = 0
+        for u in nodes_seeking_new_connection:
+            while True:
+                if idx >= len(target_indices):
+                    extra_indices = self.rng.choice(
+                        n_total, 
+                        size=buffer_size, 
+                        p=probs, 
+                        replace=True
+                    )
+                    target_indices = np.concatenate([target_indices, extra_indices])
+                    idx = 0
+
+                target_idx = target_indices[idx]
+                idx += 1
+                v = all_nodes[target_idx]
+                if u == v: 
+                    continue # skip self-loop
+                elif self.G.has_edge(u, v):
+                    continue # skip existing edges
+                else:
+                    break
             # connect and initialize trust
             self.G.add_edge(u, v)
             self._init_trust_one_way(u, v)
