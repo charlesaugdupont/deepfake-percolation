@@ -191,9 +191,7 @@ if run_step:
     run_single_step()
 
 if run_full:
-    print(len(sim.net.G.edges()))
     run_full_simulation(n_cascades)
-    print(len(sim.net.G.edges()))
 
 # configure layout
 left, right = st.columns([3, 2])
