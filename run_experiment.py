@@ -6,14 +6,14 @@ from config import SimConfig
 from simulation import Simulation
 
 def run_heatmap_experiment():
-    RESOLUTION = 20
-    NUM_TRIALS = 10
-    CASCADES_PER_TRIAL = 50
+    RESOLUTION = 15
+    NUM_TRIALS = 15
+    CASCADES_PER_TRIAL = 100
     MASTER_SEED = 12345
     MASTER_RNG = np.random.default_rng(MASTER_SEED)
     
-    costs = np.linspace(0.1, 4.0, RESOLUTION) 
-    prevalences = np.linspace(0.1, 0.9, RESOLUTION) 
+    costs = np.linspace(0.1, 5.0, RESOLUTION) 
+    prevalences = np.linspace(0.05, 0.80, RESOLUTION) 
     
     grid_fake_size = np.zeros((RESOLUTION, RESOLUTION))
     grid_true_size = np.zeros((RESOLUTION, RESOLUTION))
@@ -72,7 +72,7 @@ def run_heatmap_experiment():
     plot_results(costs, prevalences, grid_fake_size, grid_true_size, grid_verify_rate, grid_welfare)
 
 def plot_results(costs, prevalences, fake, true, verify, welfare):
-    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12), sharey=True, sharex=True)
     extent = [costs.min(), costs.max(), prevalences.min(), prevalences.max()]
     origin = 'lower'
 
@@ -100,22 +100,43 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax3.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im3, ax=ax3)
 
-    # Social Welfare (Diverging)
+    # --- Social Welfare ---
     ax4 = axes[1, 1]
-    vmin, vmax = welfare.min(), welfare.max()
-    # handle cases where all values are positive or all negative to avoid norm errors
-    if vmin >= 0: vmin = -0.1
-    if vmax <= 0: vmax = 0.1
-    
-    norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=0., vmax=vmax)
-    im4 = ax4.imshow(welfare, extent=extent, origin=origin, aspect='auto', 
-                     cmap='RdBu', norm=norm)
+
+    # Make bounds symmetric around 0
+    vmin = np.min(welfare)
+    vmax = np.max(welfare)
+
+    norm = mcolors.TwoSlopeNorm(
+        vmin=vmin,
+        vcenter=0.0,
+        vmax=vmax
+    )
+
+    im4 = ax4.imshow(
+        welfare,
+        extent=extent,
+        origin=origin,
+        aspect='auto',
+        cmap='RdBu',
+        norm=norm
+    )
+
     ax4.set_title(r'Avg Social Welfare (Utility)')
     ax4.set_xlabel(r'Verification Cost ($C_v$)')
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
-    fig.colorbar(im4, ax=ax4)
+
+    ticks = np.concatenate([
+        np.linspace(vmin, 0, 4),
+        np.linspace(0, vmax, 4),
+    ])
+
+    cbar = fig.colorbar(im4, ax=ax4, ticks=ticks)
+    cbar.ax.yaxis.set_major_formatter(plt.FormatStrFormatter('%.0f'))
+    cbar.ax.axhline(0, color='black', linewidth=1)
+
     plt.tight_layout()
-    plt.savefig("results_faster.png")
+    plt.savefig("results.png")
     plt.show()
 
 if __name__ == "__main__":
