@@ -49,7 +49,8 @@ L = st.sidebar.slider("Reputation Loss", 0.0, 5.0, 2.0, 0.05)
 # verification technology 
 st.sidebar.divider()
 st.sidebar.markdown("### Verification Technology")
-verification_accuracy = st.sidebar.slider("Verification Accuracy", 0.0, 1.0, 0.9, 0.01)
+verification_tpr = st.sidebar.slider("Verification True Positive Rate", 0.0, 1.0, 0.90, 0.02)
+verification_fpr = st.sidebar.slider("Verification False Positive Rate", 0.0, 1.0, 0.10, 0.02)
 
 # agent psychology 
 st.sidebar.divider()
@@ -75,7 +76,8 @@ cfg = SimConfig(
     rep_loss=L,
     enable_rewiring=rewiring,
     rewiring_interval=rewiring_interval,
-    verification_accuracy=verification_accuracy,
+    verification_tpr=verification_tpr,
+    verification_fpr=verification_fpr,
     neighbor_truth_prior_alpha=neighbor_truth_prior_alpha,
     neighbor_false_prior_beta=neighbor_false_prior_beta,
     global_truth_prior_alpha=global_prevalence_prior_alpha,
@@ -285,18 +287,6 @@ with right:
         alpha=1,
         ax=ax_net
     )
-
-    # Overlay cascade edges if they exist
-    if sim.last_cascade_edges:
-        nx.draw_networkx_edges(
-            G_net,
-            pos,
-            edgelist=sim.last_cascade_edges,
-            edge_color="green",
-            width=1,
-            ax=ax_net
-        )
-
 
     sm = plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.RdBu)
     sm.set_array([])

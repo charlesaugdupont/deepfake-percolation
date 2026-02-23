@@ -36,13 +36,12 @@ def run_heatmap_experiment():
             
             for _ in range(NUM_TRIALS):
                 cfg = SimConfig(
-                    num_agents=200,
-                    num_connections=2,
+                    num_agents=300,
+                    num_connections=5,
                     verification_cost=cost,
                     global_fake_prob=prev,
                     rep_gain=1.0,
                     rep_loss=2.0,
-                    verification_accuracy=0.9,
                     enable_rewiring=True,
                     rewiring_interval=10,
                     random_seed=cell_rng.integers(0, 1_000_000_000)

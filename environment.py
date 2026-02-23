@@ -17,16 +17,24 @@ class SocialNetwork:
 
     def initialize_state(self):        
         nx.set_node_attributes(self.G, 0.0, "reputation")
-        base_belief = {
+        base_global_belief = {
             'alpha': self.cfg.global_truth_prior_alpha,
             'beta': self.cfg.global_false_prior_beta
         }
-        
+        base_tech_tpr_belief = {
+            "alpha": self.cfg.verification_detected_fakes_prior,
+            "beta": self.cfg.verification_missed_fakes_prior,
+        }
+        base_tech_fpr_belief = {
+            "alpha": self.cfg.verification_false_alarms_prior,
+            "beta": self.cfg.verification_correct_rejections_prior
+        }
         for node in self.G.nodes():
-            self.G.nodes[node]['true_belief'] = base_belief.copy()
             self.G.nodes[node]['neighbor_trust'] = {}
+            self.G.nodes[node]['true_belief'] = base_global_belief.copy()
+            self.G.nodes[node]["tech_tpr_belief"] = base_tech_tpr_belief.copy()
+            self.G.nodes[node]["tech_fpr_belief"] = base_tech_fpr_belief.copy()
             
-        # initialize trust
         for u, v in self.G.edges():
             self._init_trust_one_way(u, v)
             self._init_trust_one_way(v, u)
@@ -36,12 +44,6 @@ class SocialNetwork:
             'alpha': self.cfg.neighbor_truth_prior_alpha, 
             'beta': self.cfg.neighbor_false_prior_beta
         }
-
-    def get_reach(self, node_id, visited_set):
-        """
-        Returns marginal reach (count of neighbors who are NOT in visited_set)
-        """
-        return sum(1 for n in self.G.neighbors(node_id) if n not in visited_set)
 
     def update_trust(self, observer, sender, sender_was_truthful: bool):
         trust_map = self.G.nodes[observer].get('neighbor_trust')

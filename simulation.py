@@ -11,12 +11,11 @@ class Simulation:
         self.rng = np.random.default_rng(self.cfg.random_seed)
         self.net = SocialNetwork(config, self.rng)
         self.cascade_count = 0
-        self.last_cascade_edges = []
         self.all_nodes = list(self.net.G.nodes())
 
     def run_single_cascade(self):
         self.cascade_count += 1
-        is_fake = self.rng.random() < self.cfg.global_fake_prob
+        item_is_fake = self.rng.random() < self.cfg.global_fake_prob
         seed_node = self.rng.choice(self.all_nodes)
         
         queue = collections.deque([(seed_node, None)])
@@ -24,14 +23,17 @@ class Simulation:
         parent_map = {}
         
         # Store tuple: (ActionType, MarginalReach)
-        actions_log = {} 
+        actions_log = {}
+
+        verification_log = []
         
         n_shares = 0
         n_verifications = 0
-        n_debunks = 0
-        n_receivers = 0 
+        n_receivers = 0
         total_payoff = 0.0
-        cascade_edges = []
+
+        actual_tpr = self.cfg.verification_tpr
+        actual_fpr = self.cfg.verification_fpr
 
         while queue:
             current, sender = queue.popleft()
@@ -44,19 +46,27 @@ class Simulation:
                 # If rewiring happened, sender might no longer be a neighbor. Handle gracefully.
                 if sender in self.net.G.nodes[current]['neighbor_trust']:
                     trust_params = self.net.G.nodes[current]['neighbor_trust'][sender]
-                    reliability = AgentLogic.get_neighbor_reliability(trust_params['alpha'], trust_params['beta'])
+                    reliability = AgentLogic.compute_beta_mean(trust_params['alpha'], trust_params['beta'])
                 else:
-                    reliability = AgentLogic.get_neighbor_reliability(self.cfg.neighbor_truth_prior_alpha, self.cfg.neighbor_false_prior_beta)
+                    reliability = AgentLogic.compute_beta_mean(self.cfg.neighbor_truth_prior_alpha, self.cfg.neighbor_false_prior_beta)
 
-            stats = self.net.G.nodes[current]['true_belief']
-            global_true_est = stats['alpha'] / (stats['alpha'] + stats['beta'])
+            # global belief
+            node_stats = self.net.G.nodes[current]
+            true_belief = node_stats["true_belief"]
+            global_true_est = true_belief['alpha'] / (true_belief['alpha'] + true_belief['beta'])
             p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
 
-            # agents that have not seen the item
-            reach = self.net.get_reach(current, visited)
+            # verification tech belief
+            tpr_belief = node_stats["tech_tpr_belief"]
+            fpr_belief = node_stats["tech_fpr_belief"]
+            est_tpr = AgentLogic.compute_beta_mean(tpr_belief["alpha"], tpr_belief["beta"])
+            est_fpr = AgentLogic.compute_beta_mean(fpr_belief["alpha"], fpr_belief["beta"])
+
+            # estimate potential reach
+            reach = self.net.G.degree[current]
             
             # decision
-            action = AgentLogic.decide(p_true, reach, self.cfg)
+            action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, self.cfg)
             
             # execution
             if action == 'DISCARD':
@@ -64,11 +74,11 @@ class Simulation:
             
             elif action == 'SHARE':
                 n_shares += 1
-                outcome_type = 'shared_fake' if is_fake else 'shared_true'
+                outcome_type = 'shared_fake' if item_is_fake else 'shared_true'
                 actions_log[current] = (outcome_type, reach)
                 
                 # calculate payoff
-                if is_fake:
+                if item_is_fake:
                     total_payoff -= (self.cfg.rep_loss * reach)
                 else:
                     total_payoff += (self.cfg.rep_gain * reach)
@@ -79,66 +89,63 @@ class Simulation:
                         visited.add(nbr)
                         queue.append((nbr, current))
                         parent_map[nbr] = current
-                        cascade_edges.append((current, nbr))
                         
             elif action == 'VERIFY':
                 n_verifications += 1
                 total_payoff -= self.cfg.verification_cost
-                
-                # noisy detection
-                detected_as_fake = False
-                if is_fake:
-                    # roll for detection accuracy
-                    if self.rng.random() < self.cfg.verification_accuracy:
-                        detected_as_fake = True
-                    else:
-                        detected_as_fake = False # false negative
-                else:
-                    # assuming no False Positives for simplicity
-                    detected_as_fake = False
 
-                if detected_as_fake:
-                    n_debunks += 1
+                tool_says_fake = False
+
+                if item_is_fake:
+                    if self.rng.random() < actual_tpr:
+                        tool_says_fake = True   # True Positive
+                    else:
+                        tool_says_fake = False  # False Negative
                 else:
-                    # Shared (either correctly or via False Negative)
+                    if self.rng.random() < actual_fpr:
+                        tool_says_fake = True # False Positive
+                    else:
+                        tool_says_fake = False # True Negative
+
+                verification_log.append((current, tool_says_fake))
+
+                if tool_says_fake:
+                    # Agent believes the tool -> Discard
+                    # No reputation change; propagation stops here.
+                    pass
+                else:
+                    # Agent believes the tool (it said True) -> Share
                     n_shares += 1
-                    outcome_type = 'shared_fake' if is_fake else 'shared_true'
+                    outcome_type = 'shared_fake' if item_is_fake else 'shared_true'
                     actions_log[current] = (outcome_type, reach)
-                    
-                    if is_fake:
-                        # False Negative Penalty
+                    if item_is_fake:
                         total_payoff -= (self.cfg.rep_loss * reach)
                     else:
                         total_payoff += (self.cfg.rep_gain * reach)
-                    
                     # Propagate
                     for nbr in self.net.G.neighbors(current):
                         if nbr not in visited:
                             visited.add(nbr)
                             queue.append((nbr, current))
                             parent_map[nbr] = current
-                            cascade_edges.append((current, nbr))
 
         # Post-Cascade Updates 
-        self._apply_updates(actions_log, visited, parent_map, is_fake)
-
-        self.last_cascade_edges = cascade_edges
+        self._apply_updates(actions_log, verification_log, visited, parent_map, item_is_fake)
 
         # stochastic rewiring after each cascasde
         if self.cfg.enable_rewiring and self.cascade_count % self.cfg.rewiring_interval == 0:
             self.net.rewire_network()
 
         return {
-            'is_fake': is_fake,
+            'is_fake': item_is_fake,
             'size': len(visited),
             'shares': n_shares,
             'verifications': n_verifications,
             'receivers': n_receivers,
-            'debunks': n_debunks,
             'utility': total_payoff
         }
 
-    def _apply_updates(self, actions_log, visited, parent_map, item_is_fake):
+    def _apply_updates(self, actions_log, verification_log, visited, parent_map, item_is_fake):
         # reputation updates (only agents who acted)
         for agent, (action, marginal_reach) in actions_log.items():
             if action == 'shared_true':
@@ -156,3 +163,18 @@ class Simulation:
                 self.net.update_trust(receiver, sender, False)
             else:
                 self.net.update_trust(receiver, sender, True)
+
+        # verification tech belief updates
+        for agent_id, tool_said_fake in verification_log:
+            tpr_stats = self.net.G.nodes[agent_id]['tech_tpr_belief']
+            fpr_stats = self.net.G.nodes[agent_id]['tech_fpr_belief']
+            if item_is_fake:
+                if tool_said_fake:
+                    tpr_stats["alpha"] += 1
+                else:
+                    tpr_stats["beta"] += 1
+            else:
+                if tool_said_fake:
+                    fpr_stats["alpha"] += 1
+                else:
+                    fpr_stats["beta"] += 1
