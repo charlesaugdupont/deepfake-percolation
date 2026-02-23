@@ -15,8 +15,6 @@ class AgentLogic:
         p_false_global = 1.0 - global_true_belief
         numerator = reliability * global_true_belief
         denominator = (reliability * global_true_belief) + ((1 - reliability) * p_false_global)
-        
-        if denominator == 0: return 0.5
         return numerator / denominator
 
     @staticmethod

@@ -115,7 +115,7 @@ def plot_results(costs, prevalences, fake, true, verify, welfare):
     ax4.set_ylabel(r'Fake Prevalence ($\pi_f$)')
     fig.colorbar(im4, ax=ax4)
     plt.tight_layout()
-    plt.savefig("results.png")
+    plt.savefig("results_faster.png")
     plt.show()
 
 if __name__ == "__main__":

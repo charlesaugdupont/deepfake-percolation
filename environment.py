@@ -69,15 +69,22 @@ class SocialNetwork:
         if num_edges == 0:
             return
 
+        all_nodes = list(self.G.nodes)
+        reputations = np.array([self.G.nodes[n]['reputation'] for n in all_nodes], dtype=np.float32)
+        min_rep = reputations.min()
+        max_rep = reputations.max()
+        weights = 1e-6 + (reputations - min_rep) / (max_rep - min_rep + 1e-6)
+        total_weight = weights.sum()
+        global_probs = weights / total_weight
+
         edge_rands = self.rng.random(num_edges, dtype=np.float32)
-        nodes = self.G.nodes
 
         for i, (u, v) in enumerate(edges_to_check):
             if not self.G.has_edge(u, v):
                 continue
 
-            trust_u_on_v = nodes[u]['neighbor_trust'].get(v)
-            trust_v_on_u = nodes[v]['neighbor_trust'].get(u)
+            trust_u_on_v = self.G.nodes[u]['neighbor_trust'].get(v)
+            trust_v_on_u = self.G.nodes[v]['neighbor_trust'].get(u)
             if not trust_u_on_v or not trust_v_on_u:
                 continue
 
@@ -93,43 +100,44 @@ class SocialNetwork:
 
             if edge_rands[i] < (1.0 - weakest_trust_val):
                 self.G.remove_edge(rewiring_node, passive_node)
-                nodes[rewiring_node]['neighbor_trust'].pop(passive_node, None)
-                nodes[passive_node]['neighbor_trust'].pop(rewiring_node, None)
-
-                # if not nx.is_connected(self.G):
-                #     import IPython; IPython.embed()
-                #     # TODO: node removal may result in disconnected graph
-                #     # if so, we must connect the rewiring node to a node in the OTHER connected component
-                #     # msut avoid any nodes in its own connected component
-                
-                #     # get connected component that rewiring_node belongs to
-                #     connected_component = nx.node_connected_component(self.G, rewiring_node)
-                #     self.rewire_node(rewiring_node, nodes, nodes_to_avoid=connected_component|{passive_node})
+                self.G.nodes[rewiring_node]['neighbor_trust'].pop(passive_node, None)
+                self.G.nodes[passive_node]['neighbor_trust'].pop(rewiring_node, None)
 
                 if self.G.degree(passive_node) == 0:
-                    self.rewire_node(passive_node, nodes, nodes_to_avoid={rewiring_node})
+                    target = passive_node
+                    avoid = rewiring_node
                 else:
-                    self.rewire_node(rewiring_node, nodes, nodes_to_avoid={passive_node})
+                    target = rewiring_node
+                    avoid = passive_node
 
-    def rewire_node(self, u, nodes, nodes_to_avoid):
+                self.rewire_node(target, all_nodes, global_probs, node_to_avoid=avoid)
+
+    def rewire_node(self, u, all_nodes, global_probs, node_to_avoid=None):
         """
         Adds one new edge for node u.
         """
-        candidates = list(set(self.G.nodes) - set(self.G.neighbors(u)) - {u} - nodes_to_avoid)
-        if len(candidates) == 0:
-            return
-        reputation = np.array([nodes[n]['reputation'] for n in candidates], dtype=np.float32)
+        invalid_set = set(self.G.neighbors(u))
+        invalid_set.add(u)
+        if node_to_avoid is not None:
+            invalid_set.add(node_to_avoid)
 
-        # because reputation can be negative, we do min-max normalization to get non-negative weights
-        min_rep = reputation.min()
-        max_rep = reputation.max()
-        weights = 1e-6 + (reputation - min_rep) / (max_rep - min_rep + 1e-6)  # add small epsilon to avoid division by zero
+        batch_size = 20
+        candidate_indices = self.rng.choice(
+            len(all_nodes), 
+            size=batch_size, 
+            p=global_probs, 
+            replace=True
+        )
 
-        total_weight = weights.sum()
-        probs = weights / total_weight
+        for idx in candidate_indices:
+            candidate = all_nodes[idx]
+            if candidate not in invalid_set:
+                self._connect(u, candidate)
+                return
 
-        choice = self.rng.choice(len(candidates), p=probs)        
-        v = candidates[choice]
+        return
+
+    def _connect(self, u, v):
         self.G.add_edge(u, v)
         self._init_trust_one_way(u, v)
         self._init_trust_one_way(v, u)
