@@ -6,155 +6,119 @@ using DataStructures
 using StatsBase
 using Random
 using ProgressMeter
-using Plots
+using DataFrames
+using Arrow
+using Statistics
+using Dates  # For timestamping
 
 # ================================================
 # CONFIGURATION
 # ================================================
 Base.@kwdef struct SimConfig
     random_seed::Int = 42
-
-    # Network
-    num_agents::Int = 50
-    num_connections::Int = 1
-
-    # Simulation
+    num_agents::Int = 1000
+    num_connections::Int = 2
     global_fake_prob::Float64 = 0.5
-
-    # Payoffs & Costs
-    verification_cost::Float64 = 0.5
+    verification_cost::Float64 = 1.0 
     rep_gain::Float64 = 1.0
     rep_loss::Float64 = 2.0
-
-    # Verification Technology Confusion Matrix
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
-
-    # Belief Priors
-    neighbor_truth_prior_alpha::Float64 = 1.0
-    neighbor_false_prior_beta::Float64 = 0.2
-    global_truth_prior_alpha::Float64 = 3.0
-    global_false_prior_beta::Float64 = 2.0
-    verification_detected_fakes_prior::Float64 = 5.0
-    verification_missed_fakes_prior::Float64 = 1.0
-    verification_false_alarms_prior::Float64 = 1.0
-    verification_correct_rejections_prior::Float64 = 5.0
-
-    # Rewiring
+    prior_min::Float64 = 1.0
+    prior_max::Float64 = 5.0
     enable_rewiring::Bool = true
     rewiring_interval::Int = 10
 end
 
-# Mutable struct for Beta Distributions to avoid creating new objects constantly
 mutable struct BetaDist
     alpha::Float64
     beta::Float64
 end
 
 # ================================================
-# AGENT LOGIC
+# AGENT LOGIC (Unchanged)
 # ================================================
 module AgentLogic
     using ..Main: SimConfig, BetaDist
-
     compute_beta_mean(b::BetaDist) = b.alpha / (b.alpha + b.beta)
     compute_beta_mean(alpha::Float64, beta::Float64) = alpha / (alpha + beta)
-
     function calculate_posterior_truth_prob(reliability::Float64, global_true_belief::Float64)
         p_false_global = 1.0 - global_true_belief
         numerator = reliability * global_true_belief
         denominator = (reliability * global_true_belief) + ((1.0 - reliability) * p_false_global)
-        return numerator / denominator
+        return denominator == 0.0 ? 0.0 : numerator / denominator
     end
-
     function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig)
         k = Float64(reach)
-        
         u_share_if_true = cfg.rep_gain * k
         u_share_if_fake = -cfg.rep_loss * k
-        u_discard = 0.0
-        
         u_share = (p_true * u_share_if_true) + ((1.0 - p_true) * u_share_if_fake)
-        
         eu_given_real = (1.0 - est_fpr) * (cfg.rep_gain * k)
         eu_given_fake = (1.0 - est_tpr) * (-cfg.rep_loss * k)
-        
         u_verify = -cfg.verification_cost + (p_true * eu_given_real) + ((1.0 - p_true) * eu_given_fake)
-
-        if u_share > u_discard
+        if u_share > 0.0
             return u_share > u_verify ? :SHARE : :VERIFY
         else
-            return u_discard >= u_verify ? :DISCARD : :VERIFY
+            return 0.0 >= u_verify ? :DISCARD : :VERIFY
         end
     end
 end
 
 # ================================================
-# ENVIRONMENT
+# ENVIRONMENT (Unchanged from previous LHS version)
 # ================================================
 mutable struct SocialNetwork
     cfg::SimConfig
     rng::AbstractRNG
     G::SimpleGraph{Int}
-    
-    # State vectors indexed by node ID (1 to num_agents)
     reputation::Vector{Float64}
     true_belief::Vector{BetaDist}
     tech_tpr_belief::Vector{BetaDist}
     tech_fpr_belief::Vector{BetaDist}
     neighbor_trust::Vector{Dict{Int, BetaDist}}
+    base_neighbor_alpha::Vector{Float64}
+    base_neighbor_beta::Vector{Float64}
 end
 
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
-    G = barabasi_albert(cfg.num_agents, cfg.num_connections; rng=rng)    
+    G = barabasi_albert(cfg.num_agents, cfg.num_connections; rng=rng)
+    rand_prior() = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
     reputation = zeros(Float64, cfg.num_agents)
-    true_belief = [BetaDist(cfg.global_truth_prior_alpha, cfg.global_false_prior_beta) for _ in 1:cfg.num_agents]
-    tech_tpr_belief = [BetaDist(cfg.verification_detected_fakes_prior, cfg.verification_missed_fakes_prior) for _ in 1:cfg.num_agents]
-    tech_fpr_belief = [BetaDist(cfg.verification_false_alarms_prior, cfg.verification_correct_rejections_prior) for _ in 1:cfg.num_agents]
+    true_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
+    tech_tpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
+    tech_fpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
+    base_neighbor_alpha = [rand_prior() for _ in 1:cfg.num_agents]
+    base_neighbor_beta = [rand_prior() for _ in 1:cfg.num_agents]
     neighbor_trust = [Dict{Int, BetaDist}() for _ in 1:cfg.num_agents]
-    
-    net = SocialNetwork(cfg, rng, G, reputation, true_belief, tech_tpr_belief, tech_fpr_belief, neighbor_trust)
-    
+    net = SocialNetwork(cfg, rng, G, reputation, true_belief, tech_tpr_belief, tech_fpr_belief, neighbor_trust, base_neighbor_alpha, base_neighbor_beta)
     for e in edges(G)
         u, v = src(e), dst(e)
         _init_trust_one_way!(net, u, v)
         _init_trust_one_way!(net, v, u)
     end
-    
     return net
 end
 
 function _init_trust_one_way!(net::SocialNetwork, observer::Int, target::Int)
-    net.neighbor_trust[observer][target] = BetaDist(net.cfg.neighbor_truth_prior_alpha, net.cfg.neighbor_false_prior_beta)
+    net.neighbor_trust[observer][target] = BetaDist(net.base_neighbor_alpha[observer], net.base_neighbor_beta[observer])
 end
 
 function update_trust!(net::SocialNetwork, observer::Int, sender::Int, sender_was_truthful::Bool)
     if haskey(net.neighbor_trust[observer], sender)
         stats = net.neighbor_trust[observer][sender]
-        if sender_was_truthful
-            stats.alpha += 1.0
-        else
-            stats.beta += 1.0
-        end
+        sender_was_truthful ? (stats.alpha += 1.0) : (stats.beta += 1.0)
     end
 end
 
 function update_global_belief!(net::SocialNetwork, agent_id::Int, item_was_fake::Bool)
     stats = net.true_belief[agent_id]
-    if item_was_fake
-        stats.beta += 1.0
-    else
-        stats.alpha += 1.0
-    end
+    item_was_fake ? (stats.beta += 1.0) : (stats.alpha += 1.0)
 end
 
 function rewire_network!(net::SocialNetwork)
     edges_to_check = collect(edges(net.G))
     if isempty(edges_to_check) return end
-
-    min_rep = minimum(net.reputation)
-    max_rep = maximum(net.reputation)
-    
+    min_rep, max_rep = minimum(net.reputation), maximum(net.reputation)
     weights = 1e-6 .+ (net.reputation .- min_rep) ./ (max_rep - min_rep + 1e-6)
     wv = Weights(weights)
     all_nodes = 1:nv(net.G)
@@ -162,30 +126,20 @@ function rewire_network!(net::SocialNetwork)
     for e in edges_to_check
         u, v = src(e), dst(e)
         if !has_edge(net.G, u, v) continue end
-
         trust_u_on_v = get(net.neighbor_trust[u], v, nothing)
         trust_v_on_u = get(net.neighbor_trust[v], u, nothing)
         if trust_u_on_v === nothing || trust_v_on_u === nothing continue end
 
         rel_u_v = AgentLogic.compute_beta_mean(trust_u_on_v)
         rel_v_u = AgentLogic.compute_beta_mean(trust_v_on_u)
-
-        if rel_u_v < rel_v_u
-            weakest_trust_val = rel_u_v
-            rewiring_node, passive_node = u, v
-        else
-            weakest_trust_val = rel_v_u
-            rewiring_node, passive_node = v, u
-        end
+        weakest_trust_val, rewiring_node, passive_node = rel_u_v < rel_v_u ? (rel_u_v, u, v) : (rel_v_u, v, u)
 
         if rand(net.rng) < (1.0 - weakest_trust_val)
             rem_edge!(net.G, rewiring_node, passive_node)
             delete!(net.neighbor_trust[rewiring_node], passive_node)
             delete!(net.neighbor_trust[passive_node], rewiring_node)
-
             target = degree(net.G, passive_node) == 0 ? passive_node : rewiring_node
             avoid = degree(net.G, passive_node) == 0 ? rewiring_node : passive_node
-
             _rewire_node!(net, target, all_nodes, wv, avoid)
         end
     end
@@ -193,11 +147,8 @@ end
 
 function _rewire_node!(net::SocialNetwork, u::Int, all_nodes, wv::Weights, node_to_avoid::Int)
     invalid_set = Set(neighbors(net.G, u))
-    push!(invalid_set, u)
-    push!(invalid_set, node_to_avoid)
-
+    push!(invalid_set, u, node_to_avoid)
     candidate_indices = sample(net.rng, all_nodes, wv, 20, replace=true)
-
     for candidate in candidate_indices
         if !(candidate in invalid_set)
             add_edge!(net.G, u, candidate)
@@ -209,7 +160,7 @@ function _rewire_node!(net::SocialNetwork, u::Int, all_nodes, wv::Weights, node_
 end
 
 # ================================================
-# SIMULATION
+# SIMULATION (Modified to track cascade depth)
 # ================================================
 mutable struct Simulation
     cfg::SimConfig
@@ -229,27 +180,27 @@ function run_single_cascade!(sim::Simulation)
     sim.cascade_count += 1
     item_is_fake = rand(sim.rng) < sim.cfg.global_fake_prob
     seed_node = rand(sim.rng, sim.all_nodes)
+    seed_degree = degree(sim.net.G, seed_node)
     
-    # Int tuple: (Current Node, Sender Node). 0 means None.
-    queue = Queue{Tuple{Int, Int}}()
-    enqueue!(queue, (seed_node, 0))
+    # Queue now stores: (current_node, sender_node, depth_in_tree)
+    queue = Queue{Tuple{Int, Int, Int}}()
+    enqueue!(queue, (seed_node, 0, 0))
     visited = Set{Int}([seed_node])
     parent_map = Dict{Int, Int}()
     
     actions_log = Dict{Int, Tuple{Symbol, Int}}()
     verification_log = Vector{Tuple{Int, Bool}}()
     
-    n_shares = 0
-    n_verifications = 0
-    n_receivers = 0
+    n_shares, n_verifications, n_receivers = 0, 0, 0
     total_payoff = 0.0
+    max_depth = 0
 
-    actual_tpr = sim.cfg.verification_tpr
-    actual_fpr = sim.cfg.verification_fpr
+    actual_tpr, actual_fpr = sim.cfg.verification_tpr, sim.cfg.verification_fpr
 
     while !isempty(queue)
-        current, sender = dequeue!(queue)
+        current, sender, depth = dequeue!(queue)
         n_receivers += 1
+        max_depth = max(max_depth, depth)
         
         if sender == 0
             reliability = 0.5
@@ -257,59 +208,39 @@ function run_single_cascade!(sim::Simulation)
             if haskey(sim.net.neighbor_trust[current], sender)
                 reliability = AgentLogic.compute_beta_mean(sim.net.neighbor_trust[current][sender])
             else
-                reliability = AgentLogic.compute_beta_mean(sim.cfg.neighbor_truth_prior_alpha, sim.cfg.neighbor_false_prior_beta)
+                reliability = AgentLogic.compute_beta_mean(sim.net.base_neighbor_alpha[current], sim.net.base_neighbor_beta[current])
             end
         end
 
         global_true_est = AgentLogic.compute_beta_mean(sim.net.true_belief[current])
         p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
-
         est_tpr = AgentLogic.compute_beta_mean(sim.net.tech_tpr_belief[current])
         est_fpr = AgentLogic.compute_beta_mean(sim.net.tech_fpr_belief[current])
-
         reach = degree(sim.net.G, current)
+        
         action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, sim.cfg)
         
-        if action == :DISCARD
-            # Do nothing
-        elseif action == :SHARE
-            n_shares += 1
-            outcome_type = item_is_fake ? :shared_fake : :shared_true
-            actions_log[current] = (outcome_type, reach)
-            
-            total_payoff += item_is_fake ? -(sim.cfg.rep_loss * reach) : (sim.cfg.rep_gain * reach)
-
-            for nbr in neighbors(sim.net.G, current)
-                if !(nbr in visited)
-                    push!(visited, nbr)
-                    enqueue!(queue, (nbr, current))
-                    parent_map[nbr] = current
-                end
-            end
-        elseif action == :VERIFY
-            n_verifications += 1
-            total_payoff -= sim.cfg.verification_cost
-
+        if action != :DISCARD
+            is_verifying = (action == :VERIFY)
             tool_says_fake = false
-            if item_is_fake
-                tool_says_fake = rand(sim.rng) < actual_tpr
-            else
-                tool_says_fake = rand(sim.rng) < actual_fpr
+            
+            if is_verifying
+                n_verifications += 1
+                total_payoff -= sim.cfg.verification_cost
+                tool_says_fake = item_is_fake ? (rand(sim.rng) < actual_tpr) : (rand(sim.rng) < actual_fpr)
+                push!(verification_log, (current, tool_says_fake))
             end
-
-            push!(verification_log, (current, tool_says_fake))
 
             if !tool_says_fake
                 n_shares += 1
                 outcome_type = item_is_fake ? :shared_fake : :shared_true
                 actions_log[current] = (outcome_type, reach)
-                
                 total_payoff += item_is_fake ? -(sim.cfg.rep_loss * reach) : (sim.cfg.rep_gain * reach)
-                
+
                 for nbr in neighbors(sim.net.G, current)
                     if !(nbr in visited)
                         push!(visited, nbr)
-                        enqueue!(queue, (nbr, current))
+                        enqueue!(queue, (nbr, current, depth + 1))
                         parent_map[nbr] = current
                     end
                 end
@@ -323,14 +254,9 @@ function run_single_cascade!(sim::Simulation)
         rewire_network!(sim.net)
     end
 
-    return (
-        is_fake = item_is_fake,
-        size = length(visited),
-        shares = n_shares,
-        verifications = n_verifications,
-        receivers = n_receivers,
-        utility = total_payoff
-    )
+    return (is_fake = item_is_fake, size = length(visited), shares = n_shares, 
+            verifications = n_verifications, receivers = n_receivers, 
+            utility = total_payoff, seed_node = seed_node, seed_degree = seed_degree, max_depth = max_depth)
 end
 
 function _apply_updates!(sim::Simulation, actions_log, verification_log, visited, parent_map, item_is_fake)
@@ -341,18 +267,14 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
             sim.net.reputation[agent] -= (sim.cfg.rep_loss * marginal_reach)
         end
     end
-
     for agent in visited
         update_global_belief!(sim.net, agent, item_is_fake)
     end
-
     for (receiver, sender) in parent_map
         update_trust!(sim.net, receiver, sender, !item_is_fake)
     end
-
     for (agent_id, tool_said_fake) in verification_log
-        tpr_stats = sim.net.tech_tpr_belief[agent_id]
-        fpr_stats = sim.net.tech_fpr_belief[agent_id]
+        tpr_stats, fpr_stats = sim.net.tech_tpr_belief[agent_id], sim.net.tech_fpr_belief[agent_id]
         if item_is_fake
             tool_said_fake ? (tpr_stats.alpha += 1.0) : (tpr_stats.beta += 1.0)
         else
@@ -362,132 +284,166 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
 end
 
 # ================================================
-# EXPERIMENT & PLOTTING
+# SWEEP & EXPORT LOGIC
 # ================================================
-function run_heatmap_experiment()
-    RESOLUTION = 15
-    NUM_TRIALS = 15
-    CASCADES_PER_TRIAL = 100
-    MASTER_SEED = 12345
-    master_rng = Xoshiro(MASTER_SEED)
-    
-    costs = range(0.1, 5.0, length=RESOLUTION)
-    prevalences = range(0.05, 0.80, length=RESOLUTION)
-    
-    grid_fake_size = zeros(RESOLUTION, RESOLUTION)
-    grid_true_size = zeros(RESOLUTION, RESOLUTION)
-    grid_verify_rate = zeros(RESOLUTION, RESOLUTION)
-    grid_welfare = zeros(RESOLUTION, RESOLUTION)
+function latin_hypercube_sample(n_samples, bounds; rng=Random.default_rng())
+    n_vars = length(bounds)
+    samples = zeros(Float64, n_samples, n_vars)
+    for i in 1:n_vars
+        lb, ub = bounds[i]
+        pts = (collect(0:(n_samples-1)) .+ rand(rng, n_samples)) ./ n_samples
+        pts = lb .+ pts .* (ub - lb)
+        shuffle!(rng, pts)
+        samples[:, i] = pts
+    end
+    return samples
+end
 
-    total_sims = RESOLUTION * RESOLUTION * NUM_TRIALS * CASCADES_PER_TRIAL
-    println("Starting sweep. Total cascades: ", total_sims)
-    
-    # Progress bar using ProgressMeter
-    prog = Progress(RESOLUTION * RESOLUTION, 1, "Sweeping: ")
+function run_lhs_sweep()
+    # Ensure data directory exists
+    timestamp = Dates.format(now(), "yyyy_mm_dd_HHMM")
+    out_dir = joinpath("data", "sweep_$timestamp")
+    mkpath(out_dir)
 
-    for (i, prev) in enumerate(prevalences)
-        for (j, cost) in enumerate(costs)
+    bounds = [
+        (0.10, 5.00), # 1: rep_gain
+        (0.10, 5.00), # 2: rep_loss
+        (0.60, 0.95), # 3: verification_tpr
+        (0.05, 0.40), # 4: verification_fpr
+        (0.10, 0.90), # 5: global_fake_prob
+        (1.00, 5.99)  # 6: num_connections
+    ]
+    
+    NUM_LHS_POINTS = 1000
+    NUM_REPS = 5
+    CASCADES_PER_SIM = 100
+    N_AGENTS = 1000
+
+    TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS
+
+    # Save Experiment Metadata
+    open(joinpath(out_dir, "experiment_info.txt"), "w") do io
+        println(io, "Deepfake Percolation ABM Sweep")
+        println(io, "==============================")
+        println(io, "Date: ", now())
+        println(io, "Julia Threads: ", Threads.nthreads())
+        println(io, "Total LHS Points: ", NUM_LHS_POINTS)
+        println(io, "Reps per point: ", NUM_REPS)
+        println(io, "Agents (N): ", N_AGENTS)
+        println(io, "Cascades per Sim: ", CASCADES_PER_SIM)
+        println(io, "\nParameter Bounds:")
+        println(io, bounds)
+    end
+
+    master_rng = Xoshiro(42)
+    lhs_points = latin_hypercube_sample(NUM_LHS_POINTS, bounds; rng=master_rng)
+
+    # Arrays to hold thread outputs
+    sim_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
+    cascades_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
+    node_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
+    edge_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
+
+    println("Saving experiment to: $out_dir/")
+    println("Generating $NUM_LHS_POINTS LHS combinations...")
+    println("Running $NUM_REPS stochastic reps per combination -> $TOTAL_SIMS total simulations.")
+    println("Using $(Threads.nthreads()) threads...")
+
+    prog = Progress(TOTAL_SIMS, 1, "Sweeping... ")
+    lk = ReentrantLock()
+
+    Threads.@threads for idx in 1:TOTAL_SIMS
+        lhs_id = div(idx - 1, NUM_REPS) + 1
+        rep_id = mod(idx - 1, NUM_REPS) + 1
+
+        gain, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2]
+        tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
+        prev       = lhs_points[lhs_id, 5]
+        m          = Int(floor(lhs_points[lhs_id, 6]))
+        
+        thread_seed = rand(master_rng, 1:Int(1e9)) + idx
+        
+        cfg = SimConfig(
+            num_agents=N_AGENTS, num_connections=m, global_fake_prob=prev,
+            rep_gain=gain, rep_loss=loss, verification_tpr=tpr, verification_fpr=fpr,
+            random_seed=thread_seed
+        )
+        
+        sim = Simulation(cfg)
+        
+        cascade_records = []
+        point_utilities, point_fake_sizes, point_true_sizes, point_verify_rates = Vector{Float64}(), Vector{Float64}(), Vector{Float64}(), Vector{Float64}()
+        
+        for c_id in 1:CASCADES_PER_SIM
+            stats = run_single_cascade!(sim)
             
-            cell_seed = rand(master_rng, 1:1_000_000_000)
-            cell_rng = Xoshiro(cell_seed)
-            
-            point_fake_sizes = Float64[]
-            point_true_sizes = Float64[]
-            point_verify_rates = Float64[]
-            point_utilities = Float64[]
-            
-            for _ in 1:NUM_TRIALS
-                cfg = SimConfig(
-                    num_agents = 300,
-                    num_connections = 5,
-                    verification_cost = cost,
-                    global_fake_prob = prev,
-                    rep_gain = 1.0,
-                    rep_loss = 2.0,
-                    enable_rewiring = true,
-                    rewiring_interval = 10,
-                    random_seed = rand(cell_rng, 1:1_000_000_000)
-                )
-                
-                sim = Simulation(cfg)
-                
-                for _ in 1:CASCADES_PER_TRIAL
-                    stats = run_single_cascade!(sim)
-                    
-                    push!(point_utilities, stats.utility)
-                    
-                    vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
-                    push!(point_verify_rates, vr)
-                    
-                    if stats.is_fake
-                        push!(point_fake_sizes, stats.shares)
-                    else
-                        push!(point_true_sizes, stats.shares)
-                    end
-                end
+            # Store INDIVIDUAL cascade metrics
+            push!(cascade_records, (
+                global_sim_id = idx,
+                cascade_id = c_id,
+                is_fake = stats.is_fake,
+                seed_node = stats.seed_node,
+                seed_degree = stats.seed_degree,
+                max_depth = stats.max_depth,
+                cascade_size = stats.size,
+                shares = stats.shares,
+                verifications = stats.verifications,
+                receivers = stats.receivers,
+                utility = stats.utility
+            ))
+
+            push!(point_utilities, stats.utility)
+            vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
+            push!(point_verify_rates, vr)
+            stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
+        end
+
+        cascades_dfs[idx] = DataFrame(cascade_records)
+
+        sim_dfs[idx] = DataFrame(
+            global_sim_id = idx, lhs_id = lhs_id, rep_id = rep_id,
+            rep_gain = gain, rep_loss = loss, verif_tpr = tpr, verif_fpr = fpr, 
+            fake_prob = prev, num_conn = m,
+            avg_welfare = mean(point_utilities),
+            avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
+            avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
+            avg_verify_rate = mean(point_verify_rates)
+        )
+
+        node_dfs[idx] = DataFrame(
+            global_sim_id = fill(idx, N_AGENTS), node_id = 1:N_AGENTS,
+            reputation = sim.net.reputation, base_alpha = sim.net.base_neighbor_alpha, base_beta  = sim.net.base_neighbor_beta,
+            true_alpha = [b.alpha for b in sim.net.true_belief], true_beta  = [b.beta for b in sim.net.true_belief],
+            tpr_alpha  = [b.alpha for b in sim.net.tech_tpr_belief], tpr_beta   = [b.beta for b in sim.net.tech_tpr_belief],
+            fpr_alpha  = [b.alpha for b in sim.net.tech_fpr_belief], fpr_beta   = [b.beta for b in sim.net.tech_fpr_belief],
+        )
+
+        srcs, dsts, alphas, betas = Int[], Int[], Float64[], Float64[]
+        for u in 1:N_AGENTS
+            for (v, trust) in sim.net.neighbor_trust[u]
+                push!(srcs, u), push!(dsts, v), push!(alphas, trust.alpha), push!(betas, trust.beta)
             end
-            
-            grid_fake_size[i, j] = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes) / 300.0
-            grid_true_size[i, j] = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes) / 300.0
-            grid_verify_rate[i, j] = isempty(point_verify_rates) ? 0.0 : mean(point_verify_rates)
-            grid_welfare[i, j] = mean(point_utilities)
-
+        end
+        edge_dfs[idx] = DataFrame(global_sim_id = fill(idx, length(srcs)), src = srcs, dst = dsts, trust_alpha = alphas, trust_beta = betas)
+        
+        lock(lk) do
             next!(prog)
         end
     end
 
-    plot_results(costs, prevalences, grid_fake_size, grid_true_size, grid_verify_rate, grid_welfare)
+    println("\nConcatenating DataFrames (this might take a few seconds)...")
+    all_sims = vcat(sim_dfs...)
+    all_cascades = vcat(cascades_dfs...)
+    all_nodes = vcat(node_dfs...)
+    all_edges = vcat(edge_dfs...)
+
+    println("Saving to disk as Arrow files...")
+    Arrow.write(joinpath(out_dir, "simulations.arrow"), all_sims)
+    Arrow.write(joinpath(out_dir, "cascades.arrow"), all_cascades)
+    Arrow.write(joinpath(out_dir, "nodes.arrow"), all_nodes)
+    Arrow.write(joinpath(out_dir, "edges.arrow"), all_edges)
+
+    println("\nSuccessfully saved into $(out_dir)/")
 end
 
-function make_twoslope_cmap(vmin, vmax; cmap=:RdBu, n_steps=256)
-    orig_cg = cgrad(cmap)
-    # Get the color type dynamically to initialize our array
-    colors = typeof(get(orig_cg, 0.0))[] 
-    
-    for i in 1:n_steps
-        f = (i - 1) / (n_steps - 1)
-        val = vmin + f * (vmax - vmin)
-        
-        if val < 0
-            # Map [vmin, 0] linearly to the bottom half of the colormap [0.0, 0.5]
-            c_f = vmin < 0 ? 0.5 * (1.0 - val / vmin) : 0.5
-        else
-            # Map [0, vmax] linearly to the top half of the colormap [0.5, 1.0]
-            c_f = vmax > 0 ? 0.5 + 0.5 * (val / vmax) : 0.5
-        end
-        push!(colors, get(orig_cg, c_f))
-    end
-    return cgrad(colors)
-end
-
-function plot_results(costs, prevalences, fake, true_size, verify, welfare)
-    p1 = heatmap(costs, prevalences, fake,
-        title="Avg Fake Cascade Size", xlabel="Verification Cost", ylabel="Fake Prevalence",
-        color=:Reds)
-
-    p2 = heatmap(costs, prevalences, true_size,
-        title="Avg True Cascade Size", xlabel="Verification Cost", ylabel="Fake Prevalence",
-        color=:Greens)
-
-    p3 = heatmap(costs, prevalences, verify,
-        title="Verification Rate", xlabel="Verification Cost", ylabel="Fake Prevalence",
-        color=:Blues)
-
-    vmin = minimum(welfare)
-    vmax = maximum(welfare)
-    
-    # Create our custom piecewise linear colormap
-    custom_cmap = make_twoslope_cmap(vmin, vmax, cmap=:RdBu)
-
-    p4 = heatmap(costs, prevalences, welfare,
-        title="Avg Social Welfare", xlabel="Verification Cost", ylabel="Fake Prevalence",
-        color=custom_cmap, clims=(vmin, vmax))
-
-    fig = plot(p1, p2, p3, p4, layout=(2, 2), size=(1000, 800), margin=5Plots.mm)
-    
-    savefig(fig, "results_julia.png")
-    display(fig)
-end
-
-# Run the experiment
-run_heatmap_experiment()
+run_lhs_sweep()
