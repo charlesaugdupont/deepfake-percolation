@@ -316,9 +316,9 @@ function run_lhs_sweep()
     ]
     
     NUM_LHS_POINTS = 1000
-    NUM_REPS = 10
+    NUM_REPS = 30
     CASCADES_PER_SIM = 100
-    N_AGENTS = 1000
+    N_AGENTS = 2000
 
     TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS
 
