@@ -306,16 +306,17 @@ function run_lhs_sweep()
     mkpath(out_dir)
 
     bounds = [
-        (0.10, 5.00), # 1: rep_gain
-        (0.10, 5.00), # 2: rep_loss
-        (0.60, 0.95), # 3: verification_tpr
-        (0.05, 0.40), # 4: verification_fpr
-        (0.10, 0.90), # 5: global_fake_prob
-        (1.00, 5.99)  # 6: num_connections
+        (0.10, 5.00), # 1: verification cost
+        (0.10, 5.00), # 2: rep_gain
+        (0.10, 5.00), # 3: rep_loss
+        (0.60, 0.95), # 4: verification_tpr
+        (0.05, 0.40), # 5: verification_fpr
+        (0.10, 0.90), # 6: global_fake_prob
+        (2.00, 6.99)  # 7: num_connections
     ]
     
     NUM_LHS_POINTS = 1000
-    NUM_REPS = 5
+    NUM_REPS = 10
     CASCADES_PER_SIM = 100
     N_AGENTS = 1000
 
@@ -356,15 +357,15 @@ function run_lhs_sweep()
         lhs_id = div(idx - 1, NUM_REPS) + 1
         rep_id = mod(idx - 1, NUM_REPS) + 1
 
-        gain, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2]
-        tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
-        prev       = lhs_points[lhs_id, 5]
-        m          = Int(floor(lhs_points[lhs_id, 6]))
+        cost, gain, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2], lhs_points[lhs_id, 3]
+        tpr, fpr   = lhs_points[lhs_id, 4], lhs_points[lhs_id, 5]
+        prev       = lhs_points[lhs_id, 6]
+        m          = Int(floor(lhs_points[lhs_id, 7]))
         
         thread_seed = rand(master_rng, 1:Int(1e9)) + idx
         
         cfg = SimConfig(
-            num_agents=N_AGENTS, num_connections=m, global_fake_prob=prev,
+            num_agents=N_AGENTS, num_connections=m, global_fake_prob=prev, verification_cost=cost,
             rep_gain=gain, rep_loss=loss, verification_tpr=tpr, verification_fpr=fpr,
             random_seed=thread_seed
         )
