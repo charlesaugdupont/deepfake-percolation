@@ -9,7 +9,7 @@ using ProgressMeter
 using DataFrames
 using Arrow
 using Statistics
-using Dates  # For timestamping
+using Dates
 
 # ================================================
 # CONFIGURATION
@@ -36,7 +36,7 @@ mutable struct BetaDist
 end
 
 # ================================================
-# AGENT LOGIC (Unchanged)
+# AGENT LOGIC
 # ================================================
 module AgentLogic
     using ..Main: SimConfig, BetaDist
@@ -65,7 +65,7 @@ module AgentLogic
 end
 
 # ================================================
-# ENVIRONMENT (Unchanged from previous LHS version)
+# ENVIRONMENT
 # ================================================
 mutable struct SocialNetwork
     cfg::SimConfig
@@ -160,7 +160,7 @@ function _rewire_node!(net::SocialNetwork, u::Int, all_nodes, wv::Weights, node_
 end
 
 # ================================================
-# SIMULATION (Modified to track cascade depth)
+# SIMULATION
 # ================================================
 mutable struct Simulation
     cfg::SimConfig
@@ -378,7 +378,7 @@ function run_lhs_sweep()
         for c_id in 1:CASCADES_PER_SIM
             stats = run_single_cascade!(sim)
             
-            # Store INDIVIDUAL cascade metrics
+            # Store cascade metrics
             push!(cascade_records, (
                 global_sim_id = idx,
                 cascade_id = c_id,
@@ -403,7 +403,7 @@ function run_lhs_sweep()
 
         sim_dfs[idx] = DataFrame(
             global_sim_id = idx, lhs_id = lhs_id, rep_id = rep_id,
-            rep_gain = gain, rep_loss = loss, verif_tpr = tpr, verif_fpr = fpr, 
+            cost = cost, rep_gain = gain, rep_loss = loss, verif_tpr = tpr, verif_fpr = fpr, 
             fake_prob = prev, num_conn = m,
             avg_welfare = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
