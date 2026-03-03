@@ -16,7 +16,7 @@ using Dates
 # ================================================
 Base.@kwdef struct SimConfig
     random_seed::Int = 42
-    num_agents::Int = 1000
+    num_agents::Int = 250
     num_connections::Int = 2
     global_fake_prob::Float64 = 0.5
     verification_cost::Float64 = 1.0 
@@ -26,7 +26,7 @@ Base.@kwdef struct SimConfig
     verification_fpr::Float64 = 0.10
     prior_min::Float64 = 1.0
     prior_max::Float64 = 5.0
-    enable_rewiring::Bool = true
+    enable_rewiring::Bool = false
     rewiring_interval::Int = 10
 end
 
@@ -78,6 +78,8 @@ mutable struct SocialNetwork
     neighbor_trust::Vector{Dict{Int, BetaDist}}
     base_neighbor_alpha::Vector{Float64}
     base_neighbor_beta::Vector{Float64}
+    max_possible_reputation::Vector{Float64}
+    min_possible_reputation::Vector{Float64}
 end
 
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
@@ -90,7 +92,22 @@ function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
     base_neighbor_alpha = [rand_prior() for _ in 1:cfg.num_agents]
     base_neighbor_beta = [rand_prior() for _ in 1:cfg.num_agents]
     neighbor_trust = [Dict{Int, BetaDist}() for _ in 1:cfg.num_agents]
-    net = SocialNetwork(cfg, rng, G, reputation, true_belief, tech_tpr_belief, tech_fpr_belief, neighbor_trust, base_neighbor_alpha, base_neighbor_beta)
+    best_reputation = zeros(Float64, cfg.num_agents)
+    worst_reputation = zeros(Float64, cfg.num_agents)
+    net = SocialNetwork(
+        cfg,
+        rng,
+        G,
+        reputation,
+        true_belief,
+        tech_tpr_belief,
+        tech_fpr_belief,
+        neighbor_trust,
+        base_neighbor_alpha,
+        base_neighbor_beta,
+        best_reputation,
+        worst_reputation
+    )
     for e in edges(G)
         u, v = src(e), dst(e)
         _init_trust_one_way!(net, u, v)
@@ -217,6 +234,12 @@ function run_single_cascade!(sim::Simulation)
         est_tpr = AgentLogic.compute_beta_mean(sim.net.tech_tpr_belief[current])
         est_fpr = AgentLogic.compute_beta_mean(sim.net.tech_fpr_belief[current])
         reach = degree(sim.net.G, current)
+
+        if !item_is_fake
+            sim.net.max_possible_reputation[current] += (sim.cfg.rep_gain * reach)
+        else
+            sim.net.min_possible_reputation[current] -= (sim.cfg.rep_loss * reach)
+        end
         
         action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, sim.cfg)
         
@@ -306,19 +329,20 @@ function run_lhs_sweep()
     mkpath(out_dir)
 
     bounds = [
-        (0.10, 5.00), # 1: verification cost
-        (0.10, 5.00), # 2: rep_gain
-        (0.10, 5.00), # 3: rep_loss
-        (0.60, 0.95), # 4: verification_tpr
-        (0.05, 0.40), # 5: verification_fpr
-        (0.10, 0.90), # 6: global_fake_prob
-        (2.00, 6.99)  # 7: num_connections
+        (0.01, 1.50), # 1: verification cost
+        (1.00, 5.00), # 2: rep_loss
+        (0.50, 0.95), # 3: verification_tpr
+        (0.05, 0.50), # 4: verification_fpr
+        (0.10, 0.90), # 5: global_fake_prob
+        (2.00, 8.99)  # 6: num_connections
     ]
     
-    NUM_LHS_POINTS = 1000
-    NUM_REPS = 30
-    CASCADES_PER_SIM = 100
-    N_AGENTS = 2000
+    NUM_LHS_POINTS = 500
+    NUM_REPS = 50
+    CASCADES_PER_SIM = 2000
+    BURN_IN = 1000
+    N_AGENTS = 250
+    REPUTATION_GAIN = 1.0
 
     TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS
 
@@ -357,16 +381,22 @@ function run_lhs_sweep()
         lhs_id = div(idx - 1, NUM_REPS) + 1
         rep_id = mod(idx - 1, NUM_REPS) + 1
 
-        cost, gain, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2], lhs_points[lhs_id, 3]
-        tpr, fpr   = lhs_points[lhs_id, 4], lhs_points[lhs_id, 5]
-        prev       = lhs_points[lhs_id, 6]
-        m          = Int(floor(lhs_points[lhs_id, 7]))
+        cost, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2]
+        tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
+        prev       = lhs_points[lhs_id, 5]
+        m          = Int(floor(lhs_points[lhs_id, 6]))
         
         thread_seed = rand(master_rng, 1:Int(1e9)) + idx
         
         cfg = SimConfig(
-            num_agents=N_AGENTS, num_connections=m, global_fake_prob=prev, verification_cost=cost,
-            rep_gain=gain, rep_loss=loss, verification_tpr=tpr, verification_fpr=fpr,
+            num_agents=N_AGENTS,
+            num_connections=m,
+            global_fake_prob=prev,
+            verification_cost=cost,
+            rep_gain=REPUTATION_GAIN,
+            rep_loss=loss,
+            verification_tpr=tpr,
+            verification_fpr=fpr,
             random_seed=thread_seed
         )
         
@@ -378,42 +408,60 @@ function run_lhs_sweep()
         for c_id in 1:CASCADES_PER_SIM
             stats = run_single_cascade!(sim)
             
-            # Store cascade metrics
-            push!(cascade_records, (
-                global_sim_id = idx,
-                cascade_id = c_id,
-                is_fake = stats.is_fake,
-                seed_node = stats.seed_node,
-                seed_degree = stats.seed_degree,
-                max_depth = stats.max_depth,
-                cascade_size = stats.size,
-                shares = stats.shares,
-                verifications = stats.verifications,
-                receivers = stats.receivers,
-                utility = stats.utility
-            ))
+            # store cascade metrics after burn-in period
+            if c_id > BURN_IN
+                push!(cascade_records, (
+                    global_sim_id = idx,
+                    cascade_id = c_id,
+                    is_fake = stats.is_fake,
+                    seed_node = stats.seed_node,
+                    seed_degree = stats.seed_degree,
+                    max_depth = stats.max_depth,
+                    cascade_size = stats.size,
+                    shares = stats.shares,
+                    verifications = stats.verifications,
+                    receivers = stats.receivers,
+                    utility = stats.utility
+                ))
 
-            push!(point_utilities, stats.utility)
-            vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
-            push!(point_verify_rates, vr)
-            stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
+                push!(point_utilities, stats.utility)
+                vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
+                push!(point_verify_rates, vr)
+                stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
+            end
         end
+
+        avg_true_cascade_frac = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes) / N_AGENTS
+        avg_fake_cascade_frac = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes) / N_AGENTS
+        veracity_diff = avg_true_cascade_frac - avg_fake_cascade_frac
 
         cascades_dfs[idx] = DataFrame(cascade_records)
 
         sim_dfs[idx] = DataFrame(
-            global_sim_id = idx, lhs_id = lhs_id, rep_id = rep_id,
-            cost = cost, rep_gain = gain, rep_loss = loss, verif_tpr = tpr, verif_fpr = fpr, 
-            fake_prob = prev, num_conn = m,
+            global_sim_id = idx,
+            lhs_id = lhs_id,
+            rep_id = rep_id,
+            cost = cost,
+            rep_gain = REPUTATION_GAIN,
+            rep_loss = loss,
+            verif_tpr = tpr,
+            verif_fpr = fpr, 
+            fake_prob = prev,
+            num_conn = m,
             avg_welfare = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
             avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
+            veracity_differential = veracity_diff,
             avg_verify_rate = mean(point_verify_rates)
         )
 
         node_dfs[idx] = DataFrame(
             global_sim_id = fill(idx, N_AGENTS), node_id = 1:N_AGENTS,
-            reputation = sim.net.reputation, base_alpha = sim.net.base_neighbor_alpha, base_beta  = sim.net.base_neighbor_beta,
+            reputation = sim.net.reputation,
+            best_reputation = sim.net.max_possible_reputation,
+            worst_reputation = sim.net.min_possible_reputation,
+            base_alpha = sim.net.base_neighbor_alpha,
+            base_beta  = sim.net.base_neighbor_beta,
             true_alpha = [b.alpha for b in sim.net.true_belief], true_beta  = [b.beta for b in sim.net.true_belief],
             tpr_alpha  = [b.alpha for b in sim.net.tech_tpr_belief], tpr_beta   = [b.beta for b in sim.net.tech_tpr_belief],
             fpr_alpha  = [b.alpha for b in sim.net.tech_fpr_belief], fpr_beta   = [b.beta for b in sim.net.tech_fpr_belief],
