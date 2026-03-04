@@ -16,8 +16,8 @@ using Dates
 # ================================================
 Base.@kwdef struct SimConfig
     random_seed::Int = 42
-    num_agents::Int = 250
-    num_connections::Int = 2
+    num_agents::Int = 300
+    num_connections::Int = 3
     global_fake_prob::Float64 = 0.5
     verification_cost::Float64 = 1.0 
     rep_gain::Float64 = 1.0
@@ -42,10 +42,10 @@ module AgentLogic
     using ..Main: SimConfig, BetaDist
     compute_beta_mean(b::BetaDist) = b.alpha / (b.alpha + b.beta)
     compute_beta_mean(alpha::Float64, beta::Float64) = alpha / (alpha + beta)
-    function calculate_posterior_truth_prob(reliability::Float64, global_true_belief::Float64)
+    function calculate_posterior_truth_prob(trust::Float64, global_true_belief::Float64)
         p_false_global = 1.0 - global_true_belief
-        numerator = reliability * global_true_belief
-        denominator = (reliability * global_true_belief) + ((1.0 - reliability) * p_false_global)
+        numerator = trust * global_true_belief
+        denominator = (trust * global_true_belief) + ((1.0 - trust) * p_false_global)
         return denominator == 0.0 ? 0.0 : numerator / denominator
     end
     function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig)
@@ -193,13 +193,13 @@ function Simulation(cfg::SimConfig)
     return Simulation(cfg, rng, net, 0, collect(1:cfg.num_agents))
 end
 
-function run_single_cascade!(sim::Simulation)
+function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
     sim.cascade_count += 1
     item_is_fake = rand(sim.rng) < sim.cfg.global_fake_prob
     seed_node = rand(sim.rng, sim.all_nodes)
     seed_degree = degree(sim.net.G, seed_node)
     
-    # Queue now stores: (current_node, sender_node, depth_in_tree)
+    # BFS queue: (current_node, sender_node, depth)
     queue = Queue{Tuple{Int, Int, Int}}()
     enqueue!(queue, (seed_node, 0, 0))
     visited = Set{Int}([seed_node])
@@ -219,28 +219,25 @@ function run_single_cascade!(sim::Simulation)
         n_receivers += 1
         max_depth = max(max_depth, depth)
         
-        if sender == 0
-            reliability = 0.5
-        else
-            if haskey(sim.net.neighbor_trust[current], sender)
-                reliability = AgentLogic.compute_beta_mean(sim.net.neighbor_trust[current][sender])
-            else
-                reliability = AgentLogic.compute_beta_mean(sim.net.base_neighbor_alpha[current], sim.net.base_neighbor_beta[current])
-            end
-        end
+        # compute trust: assumes that seed node always has perfect trust in 'sender', which is not an actual node
+        trust = sender == 0 ? 1.0 : AgentLogic.compute_beta_mean(sim.net.neighbor_trust[current][sender])
 
         global_true_est = AgentLogic.compute_beta_mean(sim.net.true_belief[current])
-        p_true = AgentLogic.calculate_posterior_truth_prob(reliability, global_true_est)
+        p_true = AgentLogic.calculate_posterior_truth_prob(trust, global_true_est)
         est_tpr = AgentLogic.compute_beta_mean(sim.net.tech_tpr_belief[current])
         est_fpr = AgentLogic.compute_beta_mean(sim.net.tech_fpr_belief[current])
         reach = degree(sim.net.G, current)
 
-        if !item_is_fake
-            sim.net.max_possible_reputation[current] += (sim.cfg.rep_gain * reach)
-        else
-            sim.net.min_possible_reputation[current] -= (sim.cfg.rep_loss * reach)
+        # update potential max/min reputations after burn-in period
+        if after_burn_in
+            if !item_is_fake
+                sim.net.max_possible_reputation[current] += (sim.cfg.rep_gain * reach)
+            else
+                sim.net.min_possible_reputation[current] -= (sim.cfg.rep_loss * reach)
+            end
         end
         
+        # choose action
         action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, sim.cfg)
         
         if action != :DISCARD
@@ -271,7 +268,7 @@ function run_single_cascade!(sim::Simulation)
         end
     end
 
-    _apply_updates!(sim, actions_log, verification_log, visited, parent_map, item_is_fake)
+    _apply_updates!(sim, actions_log, visited, parent_map, item_is_fake, after_burn_in)
 
     if sim.cfg.enable_rewiring && sim.cascade_count % sim.cfg.rewiring_interval == 0
         rewire_network!(sim.net)
@@ -282,26 +279,25 @@ function run_single_cascade!(sim::Simulation)
             utility = total_payoff, seed_node = seed_node, seed_degree = seed_degree, max_depth = max_depth)
 end
 
-function _apply_updates!(sim::Simulation, actions_log, verification_log, visited, parent_map, item_is_fake)
-    for (agent, (action, marginal_reach)) in actions_log
-        if action == :shared_true
-            sim.net.reputation[agent] += (sim.cfg.rep_gain * marginal_reach)
-        elseif action == :shared_fake
-            sim.net.reputation[agent] -= (sim.cfg.rep_loss * marginal_reach)
-        end
-    end
+function _apply_updates!(sim::Simulation, actions_log, visited, parent_map, item_is_fake, after_burn_in::Bool)
+    # update agent beliefs
     for agent in visited
         update_global_belief!(sim.net, agent, item_is_fake)
     end
+
+    # update neighbor trust
     for (receiver, sender) in parent_map
         update_trust!(sim.net, receiver, sender, !item_is_fake)
     end
-    for (agent_id, tool_said_fake) in verification_log
-        tpr_stats, fpr_stats = sim.net.tech_tpr_belief[agent_id], sim.net.tech_fpr_belief[agent_id]
-        if item_is_fake
-            tool_said_fake ? (tpr_stats.alpha += 1.0) : (tpr_stats.beta += 1.0)
-        else
-            tool_said_fake ? (fpr_stats.alpha += 1.0) : (fpr_stats.beta += 1.0)
+
+    # update reputations only after burn-in period
+    if after_burn_in
+        for (agent, (action, marginal_reach)) in actions_log
+            if action == :shared_true
+                sim.net.reputation[agent] += (sim.cfg.rep_gain * marginal_reach)
+            elseif action == :shared_fake
+                sim.net.reputation[agent] -= (sim.cfg.rep_loss * marginal_reach)
+            end
         end
     end
 end
@@ -323,26 +319,26 @@ function latin_hypercube_sample(n_samples, bounds; rng=Random.default_rng())
 end
 
 function run_lhs_sweep()
-    # Ensure data directory exists
     timestamp = Dates.format(now(), "yyyy_mm_dd_HHMM")
     out_dir = joinpath("data", "sweep_$timestamp")
     mkpath(out_dir)
 
     bounds = [
         (0.01, 1.50), # 1: verification cost
-        (1.00, 5.00), # 2: rep_loss
-        (0.50, 0.95), # 3: verification_tpr
-        (0.05, 0.50), # 4: verification_fpr
+        (0.50, 3.00), # 2: rep_loss
+        (0.50, 0.99), # 3: verification_tpr
+        (0.01, 0.50), # 4: verification_fpr
         (0.10, 0.90), # 5: global_fake_prob
-        (2.00, 8.99)  # 6: num_connections
     ]
-    
-    NUM_LHS_POINTS = 500
+
+    NUM_LHS_POINTS = 1000
     NUM_REPS = 50
     CASCADES_PER_SIM = 2000
     BURN_IN = 1000
-    N_AGENTS = 250
+    N_AGENTS = 300
     REPUTATION_GAIN = 1.0
+    NUM_CONNECTIONS = 3
+    RNG_NUMBER = 42
 
     TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS
 
@@ -360,7 +356,7 @@ function run_lhs_sweep()
         println(io, bounds)
     end
 
-    master_rng = Xoshiro(42)
+    master_rng = Xoshiro(RNG_NUMBER)
     lhs_points = latin_hypercube_sample(NUM_LHS_POINTS, bounds; rng=master_rng)
 
     # Arrays to hold thread outputs
@@ -384,13 +380,12 @@ function run_lhs_sweep()
         cost, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2]
         tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
         prev       = lhs_points[lhs_id, 5]
-        m          = Int(floor(lhs_points[lhs_id, 6]))
         
-        thread_seed = rand(master_rng, 1:Int(1e9)) + idx
-        
+        thread_seed = Int(mod(hash((lhs_id, rep_id, RNG_NUMBER)), typemax(Int)))     
+
         cfg = SimConfig(
             num_agents=N_AGENTS,
-            num_connections=m,
+            num_connections=NUM_CONNECTIONS,
             global_fake_prob=prev,
             verification_cost=cost,
             rep_gain=REPUTATION_GAIN,
@@ -404,31 +399,35 @@ function run_lhs_sweep()
         
         cascade_records = []
         point_utilities, point_fake_sizes, point_true_sizes, point_verify_rates = Vector{Float64}(), Vector{Float64}(), Vector{Float64}(), Vector{Float64}()
-        
-        for c_id in 1:CASCADES_PER_SIM
-            stats = run_single_cascade!(sim)
+
+        # burn-in period
+        for c_id in 1:BURN_IN
+            run_single_cascade!(sim, false)
+        end
+
+        # post burn-in, collect metrics
+        for c_id in (BURN_IN + 1):CASCADES_PER_SIM
+            stats = run_single_cascade!(sim, true)
             
             # store cascade metrics after burn-in period
-            if c_id > BURN_IN
-                push!(cascade_records, (
-                    global_sim_id = idx,
-                    cascade_id = c_id,
-                    is_fake = stats.is_fake,
-                    seed_node = stats.seed_node,
-                    seed_degree = stats.seed_degree,
-                    max_depth = stats.max_depth,
-                    cascade_size = stats.size,
-                    shares = stats.shares,
-                    verifications = stats.verifications,
-                    receivers = stats.receivers,
-                    utility = stats.utility
-                ))
+            push!(cascade_records, (
+                global_sim_id = idx,
+                cascade_id = c_id,
+                is_fake = stats.is_fake,
+                seed_node = stats.seed_node,
+                seed_degree = stats.seed_degree,
+                max_depth = stats.max_depth,
+                cascade_size = stats.size,
+                shares = stats.shares,
+                verifications = stats.verifications,
+                receivers = stats.receivers,
+                utility = stats.utility
+            ))
 
-                push!(point_utilities, stats.utility)
-                vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
-                push!(point_verify_rates, vr)
-                stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
-            end
+            push!(point_utilities, stats.utility)
+            vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
+            push!(point_verify_rates, vr)
+            stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
         end
 
         avg_true_cascade_frac = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes) / N_AGENTS
@@ -441,13 +440,11 @@ function run_lhs_sweep()
             global_sim_id = idx,
             lhs_id = lhs_id,
             rep_id = rep_id,
-            cost = cost,
-            rep_gain = REPUTATION_GAIN,
-            rep_loss = loss,
-            verif_tpr = tpr,
-            verif_fpr = fpr, 
-            fake_prob = prev,
-            num_conn = m,
+            v_cost = cost,
+            loss = loss,
+            tpr = tpr,
+            fpr = fpr, 
+            p_fake = prev,
             avg_welfare = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
             avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
@@ -462,25 +459,37 @@ function run_lhs_sweep()
             worst_reputation = sim.net.min_possible_reputation,
             base_alpha = sim.net.base_neighbor_alpha,
             base_beta  = sim.net.base_neighbor_beta,
-            true_alpha = [b.alpha for b in sim.net.true_belief], true_beta  = [b.beta for b in sim.net.true_belief],
-            tpr_alpha  = [b.alpha for b in sim.net.tech_tpr_belief], tpr_beta   = [b.beta for b in sim.net.tech_tpr_belief],
-            fpr_alpha  = [b.alpha for b in sim.net.tech_fpr_belief], fpr_beta   = [b.beta for b in sim.net.tech_fpr_belief],
+            true_alpha = [b.alpha for b in sim.net.true_belief],
+            true_beta  = [b.beta for b in sim.net.true_belief],
+            tpr_alpha  = [b.alpha for b in sim.net.tech_tpr_belief],
+            tpr_beta   = [b.beta for b in sim.net.tech_tpr_belief],
+            fpr_alpha  = [b.alpha for b in sim.net.tech_fpr_belief],
+            fpr_beta   = [b.beta for b in sim.net.tech_fpr_belief],
         )
 
         srcs, dsts, alphas, betas = Int[], Int[], Float64[], Float64[]
         for u in 1:N_AGENTS
             for (v, trust) in sim.net.neighbor_trust[u]
-                push!(srcs, u), push!(dsts, v), push!(alphas, trust.alpha), push!(betas, trust.beta)
+                push!(srcs, u)
+                push!(dsts, v)
+                push!(alphas, trust.alpha)
+                push!(betas, trust.beta)
             end
         end
-        edge_dfs[idx] = DataFrame(global_sim_id = fill(idx, length(srcs)), src = srcs, dst = dsts, trust_alpha = alphas, trust_beta = betas)
+        edge_dfs[idx] = DataFrame(
+            global_sim_id = fill(idx, length(srcs)),
+            src = srcs,
+            dst = dsts,
+            trust_alpha = alphas,
+            trust_beta = betas
+        )
         
         lock(lk) do
             next!(prog)
         end
     end
 
-    println("\nConcatenating DataFrames (this might take a few seconds)...")
+    println("\nConcatenating DataFrames...")
     all_sims = vcat(sim_dfs...)
     all_cascades = vcat(cascades_dfs...)
     all_nodes = vcat(node_dfs...)
