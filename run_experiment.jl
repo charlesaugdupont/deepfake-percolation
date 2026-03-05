@@ -18,6 +18,7 @@ Base.@kwdef struct SimConfig
     random_seed::Int = 42
     num_agents::Int = 300
     num_connections::Int = 3
+    p_triadic_closure::Float64 = 0.25
     global_fake_prob::Float64 = 0.5
     verification_cost::Float64 = 1.0 
     rep_gain::Float64 = 1.0
@@ -25,9 +26,7 @@ Base.@kwdef struct SimConfig
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
     prior_min::Float64 = 1.0
-    prior_max::Float64 = 5.0
-    enable_rewiring::Bool = false
-    rewiring_interval::Int = 10
+    prior_max::Float64 = 6.0
 end
 
 mutable struct BetaDist
@@ -82,8 +81,57 @@ mutable struct SocialNetwork
     min_possible_reputation::Vector{Float64}
 end
 
+function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_rng())
+    g = SimpleGraph(n)
+
+    seed = m + 1
+
+    # initial clique
+    for i in 1:seed
+        for j in i+1:seed
+            add_edge!(g, i, j)
+        end
+    end
+
+    # preferential attachment list
+    pref = Int[]
+    for v in 1:seed
+        append!(pref, fill(v, degree(g, v)))
+    end
+
+    for v in seed+1:n
+        connected = Int[]
+
+        # first edge
+        u = rand(rng, pref)
+        add_edge!(g, v, u)
+        push!(connected, u)
+
+        while length(connected) < m
+            if rand(rng) < p
+                w = rand(rng, neighbors(g, u))
+            else
+                w = rand(rng, pref)
+            end
+
+            if w != v && !(w in connected) && !has_edge(g, v, w)
+                add_edge!(g, v, w)
+                push!(connected, w)
+            end
+        end
+
+        # update preferential attachment list
+        for u in connected
+            push!(pref, v)
+            push!(pref, u)
+        end
+    end
+
+    return g
+end
+
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
-    G = barabasi_albert(cfg.num_agents, cfg.num_connections; rng=rng)
+    G = powerlaw_cluster_graph(cfg.num_agents, cfg.num_connections, cfg.p_triadic_closure; rng=rng)
     rand_prior() = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
     reputation = zeros(Float64, cfg.num_agents)
     true_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
@@ -120,58 +168,32 @@ function _init_trust_one_way!(net::SocialNetwork, observer::Int, target::Int)
     net.neighbor_trust[observer][target] = BetaDist(net.base_neighbor_alpha[observer], net.base_neighbor_beta[observer])
 end
 
-function update_trust!(net::SocialNetwork, observer::Int, sender::Int, sender_was_truthful::Bool)
+function update_trust!(net::SocialNetwork, observer::Int, sender::Int, item_is_fake::Bool)
     if haskey(net.neighbor_trust[observer], sender)
         stats = net.neighbor_trust[observer][sender]
-        sender_was_truthful ? (stats.alpha += 1.0) : (stats.beta += 1.0)
+        item_is_fake ? (stats.beta += 1.0) : (stats.alpha += 1.0)
     end
 end
 
-function update_global_belief!(net::SocialNetwork, agent_id::Int, item_was_fake::Bool)
+function update_global_belief!(net::SocialNetwork, agent_id::Int, item_is_fake::Bool)
     stats = net.true_belief[agent_id]
-    item_was_fake ? (stats.beta += 1.0) : (stats.alpha += 1.0)
+    item_is_fake ? (stats.beta += 1.0) : (stats.alpha += 1.0)
 end
 
-function rewire_network!(net::SocialNetwork)
-    edges_to_check = collect(edges(net.G))
-    if isempty(edges_to_check) return end
-    min_rep, max_rep = minimum(net.reputation), maximum(net.reputation)
-    weights = 1e-6 .+ (net.reputation .- min_rep) ./ (max_rep - min_rep + 1e-6)
-    wv = Weights(weights)
-    all_nodes = 1:nv(net.G)
-
-    for e in edges_to_check
-        u, v = src(e), dst(e)
-        if !has_edge(net.G, u, v) continue end
-        trust_u_on_v = get(net.neighbor_trust[u], v, nothing)
-        trust_v_on_u = get(net.neighbor_trust[v], u, nothing)
-        if trust_u_on_v === nothing || trust_v_on_u === nothing continue end
-
-        rel_u_v = AgentLogic.compute_beta_mean(trust_u_on_v)
-        rel_v_u = AgentLogic.compute_beta_mean(trust_v_on_u)
-        weakest_trust_val, rewiring_node, passive_node = rel_u_v < rel_v_u ? (rel_u_v, u, v) : (rel_v_u, v, u)
-
-        if rand(net.rng) < (1.0 - weakest_trust_val)
-            rem_edge!(net.G, rewiring_node, passive_node)
-            delete!(net.neighbor_trust[rewiring_node], passive_node)
-            delete!(net.neighbor_trust[passive_node], rewiring_node)
-            target = degree(net.G, passive_node) == 0 ? passive_node : rewiring_node
-            avoid = degree(net.G, passive_node) == 0 ? rewiring_node : passive_node
-            _rewire_node!(net, target, all_nodes, wv, avoid)
+function update_tech_beliefs!(net, agent_id, item_is_fake, tool_says_fake)
+    if item_is_fake 
+        tpr = net.tech_tpr_belief[agent_id]
+        if tool_says_fake
+            tpr.alpha += 1.0
+        else
+            tpr.beta += 1.0
         end
-    end
-end
-
-function _rewire_node!(net::SocialNetwork, u::Int, all_nodes, wv::Weights, node_to_avoid::Int)
-    invalid_set = Set(neighbors(net.G, u))
-    push!(invalid_set, u, node_to_avoid)
-    candidate_indices = sample(net.rng, all_nodes, wv, 20, replace=true)
-    for candidate in candidate_indices
-        if !(candidate in invalid_set)
-            add_edge!(net.G, u, candidate)
-            _init_trust_one_way!(net, u, candidate)
-            _init_trust_one_way!(net, candidate, u)
-            return
+    else
+        fpr = net.tech_fpr_belief[agent_id]
+        if tool_says_fake
+            fpr.alpha += 1.0
+        else
+            fpr.beta += 1.0
         end
     end
 end
@@ -219,8 +241,12 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
         n_receivers += 1
         max_depth = max(max_depth, depth)
         
-        # compute trust: assumes that seed node always has perfect trust in 'sender', which is not an actual node
-        trust = sender == 0 ? 1.0 : AgentLogic.compute_beta_mean(sim.net.neighbor_trust[current][sender])
+        # compute trust: if current is the seed node, it uses its prior trust beliefs instead of actual neighbor trust
+        if sender == 0
+            trust = AgentLogic.compute_beta_mean(sim.net.base_neighbor_alpha[current], sim.net.base_neighbor_beta[current])
+        else
+            trust = AgentLogic.compute_beta_mean(sim.net.neighbor_trust[current][sender])
+        end
 
         global_true_est = AgentLogic.compute_beta_mean(sim.net.true_belief[current])
         p_true = AgentLogic.calculate_posterior_truth_prob(trust, global_true_est)
@@ -268,26 +294,27 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
         end
     end
 
-    _apply_updates!(sim, actions_log, visited, parent_map, item_is_fake, after_burn_in)
-
-    if sim.cfg.enable_rewiring && sim.cascade_count % sim.cfg.rewiring_interval == 0
-        rewire_network!(sim.net)
-    end
+    _apply_updates!(sim, actions_log, verification_log, visited, parent_map, item_is_fake, after_burn_in)
 
     return (is_fake = item_is_fake, size = length(visited), shares = n_shares, 
             verifications = n_verifications, receivers = n_receivers, 
             utility = total_payoff, seed_node = seed_node, seed_degree = seed_degree, max_depth = max_depth)
 end
 
-function _apply_updates!(sim::Simulation, actions_log, visited, parent_map, item_is_fake, after_burn_in::Bool)
-    # update agent beliefs
+function _apply_updates!(sim::Simulation, actions_log, verification_log, visited, parent_map, item_is_fake, after_burn_in::Bool)
+    # update beliefs about fake prevalence
     for agent in visited
         update_global_belief!(sim.net, agent, item_is_fake)
     end
 
-    # update neighbor trust
+    # update beliefs about neighbor trustworthiness
     for (receiver, sender) in parent_map
-        update_trust!(sim.net, receiver, sender, !item_is_fake)
+        update_trust!(sim.net, receiver, sender, item_is_fake)
+    end
+
+    # update beliefs about verification technology
+    for (agent, tool_says_fake) in verification_log
+        update_tech_beliefs!(sim.net, agent, item_is_fake, tool_says_fake)
     end
 
     # update reputations only after burn-in period
@@ -318,14 +345,28 @@ function latin_hypercube_sample(n_samples, bounds; rng=Random.default_rng())
     return samples
 end
 
+const CascadeRecord = @NamedTuple{
+    global_sim_id::Int,
+    cascade_id::Int,
+    is_fake::Bool,
+    seed_node::Int,
+    seed_degree::Int,
+    max_depth::Int,
+    cascade_size::Int,
+    shares::Int,
+    verifications::Int,
+    receivers::Int,
+    utility::Float64
+}
+
 function run_lhs_sweep()
     timestamp = Dates.format(now(), "yyyy_mm_dd_HHMM")
     out_dir = joinpath("data", "sweep_$timestamp")
     mkpath(out_dir)
 
     bounds = [
-        (0.01, 1.50), # 1: verification cost
-        (0.50, 3.00), # 2: rep_loss
+        (0.01, 1.00), # 1: verification cost
+        (1.00, 3.00), # 2: rep_loss
         (0.50, 0.99), # 3: verification_tpr
         (0.01, 0.50), # 4: verification_fpr
         (0.10, 0.90), # 5: global_fake_prob
@@ -338,6 +379,7 @@ function run_lhs_sweep()
     N_AGENTS = 300
     REPUTATION_GAIN = 1.0
     NUM_CONNECTIONS = 3
+    P_TRIADIC_CLOSURE = 0.3
     RNG_NUMBER = 42
 
     TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS
@@ -386,6 +428,7 @@ function run_lhs_sweep()
         cfg = SimConfig(
             num_agents=N_AGENTS,
             num_connections=NUM_CONNECTIONS,
+            p_triadic_closure=P_TRIADIC_CLOSURE,
             global_fake_prob=prev,
             verification_cost=cost,
             rep_gain=REPUTATION_GAIN,
@@ -397,8 +440,11 @@ function run_lhs_sweep()
         
         sim = Simulation(cfg)
         
-        cascade_records = []
-        point_utilities, point_fake_sizes, point_true_sizes, point_verify_rates = Vector{Float64}(), Vector{Float64}(), Vector{Float64}(), Vector{Float64}()
+        cascade_records = CascadeRecord[]
+        point_utilities = Float64[]
+        point_fake_sizes = Float64[]
+        point_true_sizes = Float64[]
+        point_verify_rates = Float64[]
 
         # burn-in period
         for c_id in 1:BURN_IN
