@@ -491,7 +491,7 @@ function run_lhs_sweep()
             tpr = tpr,
             fpr = fpr, 
             p_fake = prev,
-            avg_welfare = mean(point_utilities),
+            avg_reputation = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
             avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
             veracity_differential = veracity_diff,
