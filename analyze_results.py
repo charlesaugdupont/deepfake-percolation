@@ -12,11 +12,15 @@ from scipy.stats import ks_2samp
 from pathlib import Path
 
 from utils import *
+import os
+
+if not os.path.exists("./figures"):
+    os.mkdir("./figures")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # GLOBAL CONFIG
 # ═══════════════════════════════════════════════════════════════════════════
-DATA_DIR      = Path("./data/sweep_2026_03_05_1227/")
+DATA_DIR      = Path("./data/sweep_2026_03_25_1211/")
 EDGE_SAMPLE_N = None          # None → all sims; int → sample that many sim-ids
 P_FAKE_SPLIT  = "quartiles"   # "quartiles" | "tertiles" | [b1, b2, ...]
 BIN_N         = 12            # bins for binned line plots
@@ -25,13 +29,13 @@ RANDOM_SEED   = 42
 
 # PAWN config
 PAWN_N_SLICES      = 10       # conditioning slices per parameter
-PAWN_N_BOOT        = 500      # bootstrap resamples for CIs
+PAWN_N_BOOT        = 200      # bootstrap resamples for CIs
 PAWN_CONV_STEPS    = [0.2, 0.4, 0.6, 0.8, 1.0]   # fractions of N for convergence check
 
 PARAM_COLS = ["v_cost", "loss", "tpr", "fpr", "p_fake"]
 PARAM_LABELS = {
     "v_cost": "Verif. Cost",
-    "loss":   "Reputation Loss",
+    "loss":   "Payoff Loss",
     "tpr":    "TPR",
     "fpr":    "FPR",
     "p_fake": "P(Fake)",
@@ -251,10 +255,10 @@ node_df = feather.read_feather(DATA_DIR / "nodes.arrow")
 print(f"  sim_df  : {sim_df.shape}")
 print(f"  node_df : {node_df.shape}")
 
-# ── normalised reputation ─────────────────────────────────────────────────────
-print("Computing normalised reputations")
+# ── normalised payoff ─────────────────────────────────────────────────────
+print("Computing normalised payoffs")
 def norm_rep(row):
-    r, b, w = row["reputation"], row["best_reputation"], row["worst_reputation"]
+    r, b, w = row["payoff"], row["best_payoff"], row["worst_payoff"]
     if r < 0 and w != 0: return -(r / w)
     if r > 0 and b != 0: return   r / b
     return 0.0

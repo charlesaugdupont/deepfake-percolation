@@ -70,15 +70,17 @@ mutable struct SocialNetwork
     cfg::SimConfig
     rng::AbstractRNG
     G::SimpleGraph{Int}
-    reputation::Vector{Float64}
+    payoff::Vector{Float64}
     true_belief::Vector{BetaDist}
     tech_tpr_belief::Vector{BetaDist}
     tech_fpr_belief::Vector{BetaDist}
     neighbor_trust::Vector{Dict{Int, BetaDist}}
     base_neighbor_alpha::Vector{Float64}
     base_neighbor_beta::Vector{Float64}
-    max_possible_reputation::Vector{Float64}
-    min_possible_reputation::Vector{Float64}
+    max_possible_payoff::Vector{Float64}
+    min_possible_payoff::Vector{Float64}
+    shares_true::Vector{Int}
+    shares_fake::Vector{Int}
 end
 
 function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_rng())
@@ -133,28 +135,32 @@ end
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
     G = powerlaw_cluster_graph(cfg.num_agents, cfg.num_connections, cfg.p_triadic_closure; rng=rng)
     rand_prior() = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
-    reputation = zeros(Float64, cfg.num_agents)
+    payoff = zeros(Float64, cfg.num_agents)
     true_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
     tech_tpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
     tech_fpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
     base_neighbor_alpha = [rand_prior() for _ in 1:cfg.num_agents]
     base_neighbor_beta = [rand_prior() for _ in 1:cfg.num_agents]
     neighbor_trust = [Dict{Int, BetaDist}() for _ in 1:cfg.num_agents]
-    best_reputation = zeros(Float64, cfg.num_agents)
-    worst_reputation = zeros(Float64, cfg.num_agents)
+    best_payoff = zeros(Float64, cfg.num_agents)
+    worst_payoff = zeros(Float64, cfg.num_agents)
+    true_shares = zeros(Int, cfg.num_agents)
+    fake_shares = zeros(Int, cfg.num_agents)
     net = SocialNetwork(
         cfg,
         rng,
         G,
-        reputation,
+        payoff,
         true_belief,
         tech_tpr_belief,
         tech_fpr_belief,
         neighbor_trust,
         base_neighbor_alpha,
         base_neighbor_beta,
-        best_reputation,
-        worst_reputation
+        best_payoff,
+        worst_payoff,
+        true_shares,
+        fake_shares
     )
     for e in edges(G)
         u, v = src(e), dst(e)
@@ -254,12 +260,12 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
         est_fpr = AgentLogic.compute_beta_mean(sim.net.tech_fpr_belief[current])
         reach = degree(sim.net.G, current)
 
-        # update potential max/min reputations after burn-in period
+        # update potential max/min payoff after burn-in period
         if after_burn_in
             if !item_is_fake
-                sim.net.max_possible_reputation[current] += (sim.cfg.rep_gain * reach)
+                sim.net.max_possible_payoff[current] += (sim.cfg.rep_gain * reach)
             else
-                sim.net.min_possible_reputation[current] -= (sim.cfg.rep_loss * reach)
+                sim.net.min_possible_payoff[current] -= (sim.cfg.rep_loss * reach)
             end
         end
         
@@ -317,13 +323,15 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
         update_tech_beliefs!(sim.net, agent, item_is_fake, tool_says_fake)
     end
 
-    # update reputations only after burn-in period
+    # update payoff only after burn-in period
     if after_burn_in
         for (agent, (action, marginal_reach)) in actions_log
             if action == :shared_true
-                sim.net.reputation[agent] += (sim.cfg.rep_gain * marginal_reach)
+                sim.net.payoff[agent] += (sim.cfg.rep_gain * marginal_reach)
+                sim.net.shares_true[agent] += 1
             elseif action == :shared_fake
-                sim.net.reputation[agent] -= (sim.cfg.rep_loss * marginal_reach)
+                sim.net.payoff[agent] -= (sim.cfg.rep_loss * marginal_reach)
+                sim.net.shares_fake[agent] += 1
             end
         end
     end
@@ -377,7 +385,7 @@ function run_lhs_sweep()
     CASCADES_PER_SIM = 2000
     BURN_IN = 1000
     N_AGENTS = 300
-    REPUTATION_GAIN = 1.0
+    PAYOFF_GAIN = 1.0
     NUM_CONNECTIONS = 3
     P_TRIADIC_CLOSURE = 0.3
     RNG_NUMBER = 42
@@ -431,7 +439,7 @@ function run_lhs_sweep()
             p_triadic_closure=P_TRIADIC_CLOSURE,
             global_fake_prob=prev,
             verification_cost=cost,
-            rep_gain=REPUTATION_GAIN,
+            rep_gain=PAYOFF_GAIN,
             rep_loss=loss,
             verification_tpr=tpr,
             verification_fpr=fpr,
@@ -491,7 +499,7 @@ function run_lhs_sweep()
             tpr = tpr,
             fpr = fpr, 
             p_fake = prev,
-            avg_reputation = mean(point_utilities),
+            avg_payoff = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
             avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
             veracity_differential = veracity_diff,
@@ -500,9 +508,9 @@ function run_lhs_sweep()
 
         node_dfs[idx] = DataFrame(
             global_sim_id = fill(idx, N_AGENTS), node_id = 1:N_AGENTS,
-            reputation = sim.net.reputation,
-            best_reputation = sim.net.max_possible_reputation,
-            worst_reputation = sim.net.min_possible_reputation,
+            payoff = sim.net.payoff,
+            best_payoff = sim.net.max_possible_payoff,
+            worst_payoff = sim.net.min_possible_payoff,
             base_alpha = sim.net.base_neighbor_alpha,
             base_beta  = sim.net.base_neighbor_beta,
             true_alpha = [b.alpha for b in sim.net.true_belief],
@@ -511,6 +519,8 @@ function run_lhs_sweep()
             tpr_beta   = [b.beta for b in sim.net.tech_tpr_belief],
             fpr_alpha  = [b.alpha for b in sim.net.tech_fpr_belief],
             fpr_beta   = [b.beta for b in sim.net.tech_fpr_belief],
+            true_shares = sim.net.shares_true,
+            fake_shares = sim.net.shares_fake
         )
 
         srcs, dsts, alphas, betas = Int[], Int[], Float64[], Float64[]
