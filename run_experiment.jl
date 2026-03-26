@@ -484,10 +484,6 @@ function run_lhs_sweep()
             stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
         end
 
-        avg_true_cascade_frac = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes) / N_AGENTS
-        avg_fake_cascade_frac = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes) / N_AGENTS
-        veracity_diff = avg_true_cascade_frac - avg_fake_cascade_frac
-
         cascades_dfs[idx] = DataFrame(cascade_records)
 
         sim_dfs[idx] = DataFrame(
@@ -502,7 +498,7 @@ function run_lhs_sweep()
             avg_payoff = mean(point_utilities),
             avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
             avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
-            veracity_differential = veracity_diff,
+            veracity_differential = avg_true_cascade - avg_fake_cascade_frac,
             avg_verify_rate = mean(point_verify_rates)
         )
 
