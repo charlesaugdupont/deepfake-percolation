@@ -20,7 +20,7 @@ if not os.path.exists("./figures"):
 # ═══════════════════════════════════════════════════════════════════════════
 # GLOBAL CONFIG
 # ═══════════════════════════════════════════════════════════════════════════
-DATA_DIR      = Path("./data/sweep_2026_03_25_1211/")
+DATA_DIR      = Path("./data/sweep_2026_04_01_1556/")
 EDGE_SAMPLE_N = None          # None → all sims; int → sample that many sim-ids
 P_FAKE_SPLIT  = "quartiles"   # "quartiles" | "tertiles" | [b1, b2, ...]
 BIN_N         = 12            # bins for binned line plots
@@ -252,26 +252,33 @@ def pawn_convergence(X: pd.DataFrame, y: np.ndarray,
 print("Loading simulation and node data")
 sim_df  = feather.read_feather(DATA_DIR / "simulations.arrow")
 node_df = feather.read_feather(DATA_DIR / "nodes.arrow")
+cascade_df = feather.read_feather(DATA_DIR / "cascades.arrow")
 print(f"  sim_df  : {sim_df.shape}")
 print(f"  node_df : {node_df.shape}")
 
-# ── normalised payoff ─────────────────────────────────────────────────────
-print("Computing normalised payoffs")
-def norm_rep(row):
-    r, b, w = row["payoff"], row["best_payoff"], row["worst_payoff"]
-    if r < 0 and w != 0: return -(r / w)
-    if r > 0 and b != 0: return   r / b
-    return 0.0
+# Precompute per-sim fake/true counts
+sim_counts = cascade_df.groupby("global_sim_id")["is_fake"].agg(
+    num_fake="sum"
+).reset_index()
+sim_counts["num_true"] = 1000 - sim_counts["num_fake"]
 
-node_df["normalized_rep"] = node_df.apply(norm_rep, axis=1)
+# Merge counts into node_df
+node_df = node_df.merge(sim_counts, on="global_sim_id", how="left")
+
+# Compute veracity vectorized
+node_df["veracity"] = (node_df["true_shares"] / node_df["num_true"]) - \
+                      (node_df["fake_shares"] / node_df["num_fake"])
+
+# Drop helper columns
+node_df.drop(columns=["num_fake", "num_true"], inplace=True)
 
 # ── Sen welfare per simulation ────────────────────────────────────────────────
 print("Computing Sen welfare per simulation")
 sen_vals = (
-    node_df.groupby("global_sim_id")["normalized_rep"]
+    node_df.groupby("global_sim_id")["veracity"]
     .apply(lambda x: sen_welfare(x.values))
     .reset_index()
-    .rename(columns={"normalized_rep": "sen_welfare"})
+    .rename(columns={"veracity": "sen_welfare"})
 )
 sim_df = sim_df.merge(sen_vals, on="global_sim_id")
 

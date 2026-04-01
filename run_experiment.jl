@@ -25,8 +25,8 @@ Base.@kwdef struct SimConfig
     rep_loss::Float64 = 2.0
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
-    prior_min::Float64 = 1.0
-    prior_max::Float64 = 6.0
+    prior_min::Float64 = 0.5
+    prior_max::Float64 = 1.5
 end
 
 mutable struct BetaDist
@@ -374,7 +374,7 @@ function run_lhs_sweep()
 
     bounds = [
         (0.01, 1.00), # 1: verification cost
-        (1.00, 3.00), # 2: rep_loss
+        (1.00, 4.00), # 2: rep_loss
         (0.50, 0.99), # 3: verification_tpr
         (0.01, 0.50), # 4: verification_fpr
         (0.10, 0.90), # 5: global_fake_prob
@@ -485,6 +485,8 @@ function run_lhs_sweep()
         end
 
         cascades_dfs[idx] = DataFrame(cascade_records)
+        avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS
+        avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS
 
         sim_dfs[idx] = DataFrame(
             global_sim_id = idx,
@@ -496,9 +498,9 @@ function run_lhs_sweep()
             fpr = fpr, 
             p_fake = prev,
             avg_payoff = mean(point_utilities),
-            avg_fake_cascade = isempty(point_fake_sizes) ? 0.0 : mean(point_fake_sizes)/N_AGENTS,
-            avg_true_cascade = isempty(point_true_sizes) ? 0.0 : mean(point_true_sizes)/N_AGENTS,
-            veracity_differential = avg_true_cascade - avg_fake_cascade_frac,
+            avg_fake_cascade = avg_fake_cascade,
+            avg_true_cascade = avg_true_cascade,
+            veracity_differential = avg_true_cascade - avg_fake_cascade,
             avg_verify_rate = mean(point_verify_rates)
         )
 
@@ -556,4 +558,7 @@ function run_lhs_sweep()
     println("\nSuccessfully saved into $(out_dir)/")
 end
 
-run_lhs_sweep()
+
+if !@isdefined(_INCLUDED_AS_MODULE)
+    run_lhs_sweep()
+end
