@@ -57,6 +57,8 @@ function agent_snapshot(sim::Simulation, rep_id::Int, cascade_id::Int, phase::St
     tpr_n      = [b.alpha + b.beta for b in net.tech_tpr_belief]
     fpr_n      = [b.alpha + b.beta for b in net.tech_fpr_belief]
 
+    degree_vec = degree(sim.net.G)
+
     mean_trust = map(1:n) do i
         ts = net.neighbor_trust[i]
         isempty(ts) && return NaN
@@ -82,6 +84,7 @@ function agent_snapshot(sim::Simulation, rep_id::Int, cascade_id::Int, phase::St
         fpr_n        = fpr_n,
         mean_trust   = mean_trust,
         mean_trust_n = mean_trust_n,
+        node_degree  = degree_vec
     )
 end
 
