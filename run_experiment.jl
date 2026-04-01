@@ -374,9 +374,9 @@ function run_lhs_sweep()
 
     bounds = [
         (0.01, 1.00), # 1: verification cost
-        (1.00, 4.00), # 2: rep_loss
-        (0.50, 0.99), # 3: verification_tpr
-        (0.01, 0.50), # 4: verification_fpr
+        (1.00, 3.00), # 2: rep_loss
+        (0.60, 0.99), # 3: verification_tpr
+        (0.01, 0.40), # 4: verification_fpr
         (0.10, 0.90), # 5: global_fake_prob
     ]
 
