@@ -252,33 +252,30 @@ def pawn_convergence(X: pd.DataFrame, y: np.ndarray,
 print("Loading simulation and node data")
 sim_df  = feather.read_feather(DATA_DIR / "simulations.arrow")
 node_df = feather.read_feather(DATA_DIR / "nodes.arrow")
-cascade_df = feather.read_feather(DATA_DIR / "cascades.arrow")
 print(f"  sim_df  : {sim_df.shape}")
 print(f"  node_df : {node_df.shape}")
 
-# Precompute per-sim fake/true counts
-sim_counts = cascade_df.groupby("global_sim_id")["is_fake"].agg(
-    num_fake="sum"
-).reset_index()
-sim_counts["num_true"] = 1000 - sim_counts["num_fake"]
+def compute_normalized_payoff(row):
+    rep = row["payoff"]
+    best = row["best_payoff"]
+    worst = row["worst_payoff"]
+    
+    if rep < 0 and worst != 0:
+        return - (rep / worst)
+    elif rep > 0 and best != 0:
+        return rep / best
+    else:
+        return 0.0
 
-# Merge counts into node_df
-node_df = node_df.merge(sim_counts, on="global_sim_id", how="left")
-
-# Compute veracity vectorized
-node_df["veracity"] = (node_df["true_shares"] / node_df["num_true"]) - \
-                      (node_df["fake_shares"] / node_df["num_fake"])
-
-# Drop helper columns
-node_df.drop(columns=["num_fake", "num_true"], inplace=True)
+node_df["agent_veracity"] = node_df.apply(compute_normalized_payoff, axis=1)
 
 # ── Sen welfare per simulation ────────────────────────────────────────────────
 print("Computing Sen welfare per simulation")
 sen_vals = (
-    node_df.groupby("global_sim_id")["veracity"]
+    node_df.groupby("global_sim_id")["agent_veracity"]
     .apply(lambda x: sen_welfare(x.values))
     .reset_index()
-    .rename(columns={"veracity": "sen_welfare"})
+    .rename(columns={"agent_veracity": "sen_welfare"})
 )
 sim_df = sim_df.merge(sen_vals, on="global_sim_id")
 
