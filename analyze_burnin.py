@@ -17,7 +17,7 @@ import seaborn as sns
 from pathlib import Path
 from scipy.stats import pearsonr
 
-DATA_DIR = Path("./data/burnin_diagnostic/")   # <-- update timestamp
+DATA_DIR = Path("./data/burnin_diagnostic/")
 
 snap_df = feather.read_feather(DATA_DIR / "burnin_snapshots.arrow")
 casc_df = feather.read_feather(DATA_DIR / "burnin_cascades.arrow")

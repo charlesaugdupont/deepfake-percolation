@@ -25,8 +25,9 @@ Base.@kwdef struct SimConfig
     rep_loss::Float64 = 2.0
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
-    prior_min::Float64 = 0.5
-    prior_max::Float64 = 1.5
+    prior_min::Float64 = 0.3
+    prior_max::Float64 = 0.7
+    prior_strength::Float64 = 2.0
 end
 
 mutable struct BetaDist
@@ -133,14 +134,31 @@ function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_r
 end
 
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
+    
+    
     G = powerlaw_cluster_graph(cfg.num_agents, cfg.num_connections, cfg.p_triadic_closure; rng=rng)
-    rand_prior() = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
-    payoff = zeros(Float64, cfg.num_agents)
-    true_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
-    tech_tpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
-    tech_fpr_belief = [BetaDist(rand_prior(), rand_prior()) for _ in 1:cfg.num_agents]
-    base_neighbor_alpha = [rand_prior() for _ in 1:cfg.num_agents]
-    base_neighbor_beta = [rand_prior() for _ in 1:cfg.num_agents]
+
+    # Sample mean uniformly from [prior_min, prior_max], then convert to (alpha, beta)
+    function rand_prior_dist()
+        m = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
+        return BetaDist(m * cfg.prior_strength, (1.0 - m) * cfg.prior_strength)
+    end
+    function rand_prior_alpha()
+        m = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
+        return m * cfg.prior_strength
+    end
+    function rand_prior_beta()
+        m = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
+        return (1.0 - m) * cfg.prior_strength
+    end
+
+    payoff           = zeros(Float64, cfg.num_agents)
+    true_belief      = [rand_prior_dist() for _ in 1:cfg.num_agents]
+    tech_tpr_belief  = [rand_prior_dist() for _ in 1:cfg.num_agents]
+    tech_fpr_belief  = [rand_prior_dist() for _ in 1:cfg.num_agents]
+    base_neighbor_alpha = [rand_prior_alpha() for _ in 1:cfg.num_agents]
+    base_neighbor_beta  = [rand_prior_beta()  for _ in 1:cfg.num_agents]
+    
     neighbor_trust = [Dict{Int, BetaDist}() for _ in 1:cfg.num_agents]
     best_payoff = zeros(Float64, cfg.num_agents)
     worst_payoff = zeros(Float64, cfg.num_agents)
@@ -377,7 +395,7 @@ function run_lhs_sweep()
         (1.00, 3.00), # 2: rep_loss
         (0.60, 0.99), # 3: verification_tpr
         (0.01, 0.40), # 4: verification_fpr
-        (0.10, 0.90), # 5: global_fake_prob
+        (0.01, 0.99), # 5: global_fake_prob
     ]
 
     NUM_LHS_POINTS = 1000
