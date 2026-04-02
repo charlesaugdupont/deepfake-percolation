@@ -20,7 +20,7 @@ if not os.path.exists("./figures"):
 # ═══════════════════════════════════════════════════════════════════════════
 # GLOBAL CONFIG
 # ═══════════════════════════════════════════════════════════════════════════
-DATA_DIR      = Path("./data/sweep_2026_04_01_1627/")
+DATA_DIR      = Path("./data/sweep_2026_04_02_1324/")
 EDGE_SAMPLE_N = None          # None → all sims; int → sample that many sim-ids
 P_FAKE_SPLIT  = "quartiles"   # "quartiles" | "tertiles" | [b1, b2, ...]
 BIN_N         = 12            # bins for binned line plots
