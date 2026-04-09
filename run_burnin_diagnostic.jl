@@ -22,7 +22,7 @@ const DIAG = (
     rep_loss = 3.00, # [1.00, 3.00]
     tpr      = 0.85, # [0.50, 0.99]
     fpr      = 0.10, # [0.01, 0.50]
-    p_fake   = 0.20, # [0.10, 0.90]
+    p_fake   = 0.7, # [0.10, 0.90]
 
     # ── network / payoff (must match main sweep) ──────────────────────────────
     n_agents          = 300,
@@ -89,7 +89,7 @@ function agent_snapshot(sim::Simulation, rep_id::Int, cascade_id::Int, phase::St
 end
 
 function cascade_summary(stats, rep_id::Int, cascade_id::Int, phase::String)
-    vr = stats.receivers > 0 ? stats.verifications / stats.receivers : 0.0
+    vr = stats.size > 0 ? stats.verifications / stats.size : 0.0
     (
         rep_id        = rep_id,
         cascade_id    = cascade_id,
@@ -98,7 +98,6 @@ function cascade_summary(stats, rep_id::Int, cascade_id::Int, phase::String)
         cascade_size  = stats.size,
         shares        = stats.shares,
         verifications = stats.verifications,
-        receivers     = stats.receivers,
         verify_rate   = vr,
         utility       = stats.utility,
         max_depth     = stats.max_depth,

@@ -254,7 +254,7 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
     actions_log = Dict{Int, Tuple{Symbol, Int}}()
     verification_log = Vector{Tuple{Int, Bool}}()
     
-    n_shares, n_verifications, n_receivers = 0, 0, 0
+    n_shares, n_verifications = 0, 0
     total_payoff = 0.0
     max_depth = 0
 
@@ -262,7 +262,6 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
 
     while !isempty(queue)
         current, sender, depth = dequeue!(queue)
-        n_receivers += 1
         max_depth = max(max_depth, depth)
         
         # compute trust: if current is the seed node, it uses its prior trust beliefs instead of actual neighbor trust
@@ -321,8 +320,8 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
     _apply_updates!(sim, actions_log, verification_log, visited, parent_map, item_is_fake, after_burn_in)
 
     return (is_fake = item_is_fake, size = length(visited), shares = n_shares, 
-            verifications = n_verifications, receivers = n_receivers, 
-            utility = total_payoff, seed_node = seed_node, seed_degree = seed_degree, max_depth = max_depth)
+            verifications = n_verifications, utility = total_payoff, seed_node = seed_node, 
+            seed_degree = seed_degree, max_depth = max_depth)
 end
 
 function _apply_updates!(sim::Simulation, actions_log, verification_log, visited, parent_map, item_is_fake, after_burn_in::Bool)
@@ -381,7 +380,6 @@ const CascadeRecord = @NamedTuple{
     cascade_size::Int,
     shares::Int,
     verifications::Int,
-    receivers::Int,
     utility::Float64
 }
 
@@ -492,14 +490,13 @@ function run_lhs_sweep()
                 cascade_size = stats.size,
                 shares = stats.shares,
                 verifications = stats.verifications,
-                receivers = stats.receivers,
                 utility = stats.utility
             ))
 
             push!(point_utilities, stats.utility)
-            vr = stats.receivers > 0 ? (stats.verifications / stats.receivers) : 0.0
+            vr = stats.size > 0 ? (stats.verifications / stats.size) : 0.0
             push!(point_verify_rates, vr)
-            stats.is_fake ? push!(point_fake_sizes, stats.shares) : push!(point_true_sizes, stats.shares)
+            stats.is_fake ? push!(point_fake_sizes, stats.size) : push!(point_true_sizes, stats.size)
         end
 
         cascades_dfs[idx] = DataFrame(cascade_records)
