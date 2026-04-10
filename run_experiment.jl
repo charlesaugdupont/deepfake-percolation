@@ -393,7 +393,7 @@ function run_lhs_sweep()
         (1.00, 3.00), # 2: rep_loss
         (0.60, 0.99), # 3: verification_tpr
         (0.01, 0.40), # 4: verification_fpr
-        (0.01, 0.99), # 5: global_fake_prob
+        (0.05, 0.95), # 5: global_fake_prob
     ]
 
     NUM_LHS_POINTS = 1000
@@ -403,7 +403,7 @@ function run_lhs_sweep()
     N_AGENTS = 300
     PAYOFF_GAIN = 1.0
     NUM_CONNECTIONS = 3
-    P_TRIADIC_CLOSURE = 0.3
+    P_TRIADIC_CLOSURE = 0.5
     RNG_NUMBER = 42
 
     TOTAL_SIMS = NUM_LHS_POINTS * NUM_REPS

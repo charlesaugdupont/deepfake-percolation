@@ -22,12 +22,12 @@ const DIAG = (
     rep_loss = 3.00, # [1.00, 3.00]
     tpr      = 0.85, # [0.50, 0.99]
     fpr      = 0.10, # [0.01, 0.50]
-    p_fake   = 0.7, # [0.10, 0.90]
+    p_fake   = 0.2, # [0.10, 0.90]
 
     # ── network / payoff (must match main sweep) ──────────────────────────────
     n_agents          = 300,
     num_connections   = 3,
-    p_triadic_closure = 0.30,
+    p_triadic_closure = 0.5,
     rep_gain          = 1.0,
 
     # ── run length ───────────────────────────────────────────────────────────
