@@ -82,6 +82,7 @@ mutable struct SocialNetwork
     min_possible_payoff::Vector{Float64}
     shares_true::Vector{Int}
     shares_fake::Vector{Int}
+    verify_count::Vector{Int}
 end
 
 function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_rng())
@@ -178,7 +179,8 @@ function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
         best_payoff,
         worst_payoff,
         true_shares,
-        fake_shares
+        fake_shares,
+        zeros(Int, cfg.num_agents)
     )
     for e in edges(G)
         u, v = src(e), dst(e)
@@ -338,6 +340,7 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
     # update beliefs about verification technology
     for (agent, tool_says_fake) in verification_log
         update_tech_beliefs!(sim.net, agent, item_is_fake, tool_says_fake)
+        sim.net.verify_count[agent] += 1
     end
 
     # update payoff only after burn-in period

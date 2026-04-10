@@ -36,8 +36,7 @@ const DIAG = (
 
     # ── replications & snapshot cadence ──────────────────────────────────────
     n_reps         = 50,
-    snapshot_every = 1,     # agent-level snapshot every N cascades
-                             # (set to 1 for full resolution; larger files)
+    snapshot_every = 1,
     rng_seed       = 42,
 )
 
@@ -45,26 +44,26 @@ const DIAG = (
 # SNAPSHOT HELPERS
 # ════════════════════════════════════════════════════════════════════════════
 
-function agent_snapshot(sim::Simulation, rep_id::Int, cascade_id::Int, phase::String)
+function agent_snapshot(sim::Simulation, centrality, rep_id::Int, cascade_id::Int, phase::String)
     net = sim.net
+    G   = net.G
     n   = sim.cfg.num_agents
 
+    # — existing belief/trust computations —
     true_mean  = [AgentLogic.compute_beta_mean(b) for b in net.true_belief]
     tpr_mean   = [AgentLogic.compute_beta_mean(b) for b in net.tech_tpr_belief]
     fpr_mean   = [AgentLogic.compute_beta_mean(b) for b in net.tech_fpr_belief]
-
     true_n     = [b.alpha + b.beta for b in net.true_belief]
     tpr_n      = [b.alpha + b.beta for b in net.tech_tpr_belief]
     fpr_n      = [b.alpha + b.beta for b in net.tech_fpr_belief]
 
-    degree_vec = degree(sim.net.G)
+    degree_vec = degree(G)
 
     mean_trust = map(1:n) do i
         ts = net.neighbor_trust[i]
         isempty(ts) && return NaN
         mean(AgentLogic.compute_beta_mean(v) for v in values(ts))
     end
-
     mean_trust_n = map(1:n) do i
         ts = net.neighbor_trust[i]
         isempty(ts) && return NaN
@@ -72,19 +71,23 @@ function agent_snapshot(sim::Simulation, rep_id::Int, cascade_id::Int, phase::St
     end
 
     DataFrame(
-        rep_id       = fill(rep_id,      n),
-        cascade_id   = fill(cascade_id,  n),
-        phase        = fill(phase,       n),
-        node_id      = 1:n,
-        true_mean    = true_mean,
-        tpr_mean     = tpr_mean,
-        fpr_mean     = fpr_mean,
-        true_n       = true_n,
-        tpr_n        = tpr_n,
-        fpr_n        = fpr_n,
-        mean_trust   = mean_trust,
-        mean_trust_n = mean_trust_n,
-        node_degree  = degree_vec
+        rep_id        = fill(rep_id,     n),
+        cascade_id    = fill(cascade_id, n),
+        phase         = fill(phase,      n),
+        node_id       = 1:n,
+        true_mean     = true_mean,
+        tpr_mean      = tpr_mean,
+        fpr_mean      = fpr_mean,
+        true_n        = true_n,
+        tpr_n         = tpr_n,
+        fpr_n         = fpr_n,
+        mean_trust    = mean_trust,
+        mean_trust_n  = mean_trust_n,
+        node_degree   = degree_vec,
+        betweenness   = centrality.betweenness,
+        closeness     = centrality.closeness,
+        eigenvector   = centrality.eigenvector,
+        verify_count  = copy(sim.net.verify_count)
     )
 end
 
@@ -149,8 +152,16 @@ function run_burnin_diagnostic()
             random_seed         = rep_seed,
         )
 
-        sim          = Simulation(cfg)
-        snap_dfs     = DataFrame[]
+        sim = Simulation(cfg)
+
+        # compute centrality measures
+        centrality = (
+            betweenness = betweenness_centrality(sim.net.G),
+            closeness = closeness_centrality(sim.net.G),
+            eigenvector = eigenvector_centrality(sim.net.G),
+        )
+
+        snap_dfs = DataFrame[]
         cascade_rows = NamedTuple[]
 
         for c_id in 1:total_cascades
@@ -161,11 +172,9 @@ function run_burnin_diagnostic()
 
             push!(cascade_rows, cascade_summary(stats, rep, c_id, phase))
 
-            is_boundary = (c_id == 1) ||
-                          (c_id == DIAG.burn_in_length) ||
-                          (c_id == total_cascades)
+            is_boundary = (c_id == 1) || (c_id == DIAG.burn_in_length) || (c_id == total_cascades)
             if is_boundary || c_id % DIAG.snapshot_every == 0
-                push!(snap_dfs, agent_snapshot(sim, rep, c_id, phase))
+                push!(snap_dfs, agent_snapshot(sim, centrality, rep, c_id, phase))
             end
         end
 
