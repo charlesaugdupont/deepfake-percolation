@@ -25,8 +25,8 @@ Base.@kwdef struct SimConfig
     rep_loss::Float64 = 2.0
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
-    prior_min::Float64 = 0.3
-    prior_max::Float64 = 0.7
+    prior_min::Float64 = 0.45
+    prior_max::Float64 = 0.55
     prior_strength::Float64 = 2.0
 end
 
@@ -83,6 +83,7 @@ mutable struct SocialNetwork
     shares_true::Vector{Int}
     shares_fake::Vector{Int}
     verify_count::Vector{Int}
+    exposure_count::Vector{Int}
 end
 
 function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_rng())
@@ -180,6 +181,7 @@ function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
         worst_payoff,
         true_shares,
         fake_shares,
+        zeros(Int, cfg.num_agents),
         zeros(Int, cfg.num_agents)
     )
     for e in edges(G)
@@ -330,6 +332,7 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
     # update beliefs about fake prevalence
     for agent in visited
         update_global_belief!(sim.net, agent, item_is_fake)
+        sim.net.exposure_count[agent] += 1
     end
 
     # update beliefs about neighbor trustworthiness

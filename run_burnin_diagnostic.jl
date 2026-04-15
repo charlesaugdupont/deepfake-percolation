@@ -71,23 +71,24 @@ function agent_snapshot(sim::Simulation, centrality, rep_id::Int, cascade_id::In
     end
 
     DataFrame(
-        rep_id        = fill(rep_id,     n),
-        cascade_id    = fill(cascade_id, n),
-        phase         = fill(phase,      n),
-        node_id       = 1:n,
-        true_mean     = true_mean,
-        tpr_mean      = tpr_mean,
-        fpr_mean      = fpr_mean,
-        true_n        = true_n,
-        tpr_n         = tpr_n,
-        fpr_n         = fpr_n,
-        mean_trust    = mean_trust,
-        mean_trust_n  = mean_trust_n,
-        node_degree   = degree_vec,
-        betweenness   = centrality.betweenness,
-        closeness     = centrality.closeness,
-        eigenvector   = centrality.eigenvector,
-        verify_count  = copy(sim.net.verify_count)
+        rep_id = fill(rep_id,     n),
+        cascade_id = fill(cascade_id, n),
+        phase = fill(phase,      n),
+        node_id = 1:n,
+        true_mean = true_mean,
+        tpr_mean = tpr_mean,
+        fpr_mean = fpr_mean,
+        true_n = true_n,
+        tpr_n = tpr_n,
+        fpr_n = fpr_n,
+        mean_trust = mean_trust,
+        mean_trust_n = mean_trust_n,
+        node_degree = degree_vec,
+        betweenness = centrality.betweenness,
+        closeness = centrality.closeness,
+        eigenvector = centrality.eigenvector,
+        verify_count = copy(sim.net.verify_count),
+        exposure_count = copy(sim.net.exposure_count)
     )
 end
 
