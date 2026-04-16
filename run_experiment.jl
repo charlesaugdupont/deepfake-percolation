@@ -25,8 +25,8 @@ Base.@kwdef struct SimConfig
     rep_loss::Float64 = 2.0
     verification_tpr::Float64 = 0.90
     verification_fpr::Float64 = 0.10
-    prior_min::Float64 = 0.45
-    prior_max::Float64 = 0.55
+    prior_min::Float64 = 0.3
+    prior_max::Float64 = 0.7
     prior_strength::Float64 = 2.0
 end
 
