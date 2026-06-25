@@ -1,6 +1,4 @@
-# ================================================
 # deepfake_percolation.jl
-# ================================================
 using Graphs
 using DataStructures
 using StatsBase
@@ -11,9 +9,7 @@ using Arrow
 using Statistics
 using Dates
 
-# ================================================
-# CONFIGURATION
-# ================================================
+# configuration
 Base.@kwdef struct SimConfig
     random_seed::Int = 42
     num_agents::Int = 300
@@ -35,9 +31,7 @@ mutable struct BetaDist
     beta::Float64
 end
 
-# ================================================
-# AGENT LOGIC
-# ================================================
+# agent logic
 module AgentLogic
     using ..Main: SimConfig, BetaDist
     compute_beta_mean(b::BetaDist) = b.alpha / (b.alpha + b.beta)
@@ -64,9 +58,7 @@ module AgentLogic
     end
 end
 
-# ================================================
-# ENVIRONMENT
-# ================================================
+# environment
 mutable struct SocialNetwork
     cfg::SimConfig
     rng::AbstractRNG
@@ -136,11 +128,9 @@ function powerlaw_cluster_graph(n::Int, m::Int, p::Float64; rng=Random.default_r
 end
 
 function SocialNetwork(cfg::SimConfig, rng::AbstractRNG)
-    
-    
     G = powerlaw_cluster_graph(cfg.num_agents, cfg.num_connections, cfg.p_triadic_closure; rng=rng)
 
-    # Sample mean uniformly from [prior_min, prior_max], then convert to (alpha, beta)
+    # sample mean uniformly from [prior_min, prior_max], then convert to (alpha, beta)
     function rand_prior_dist()
         m = cfg.prior_min + rand(rng) * (cfg.prior_max - cfg.prior_min)
         return BetaDist(m * cfg.prior_strength, (1.0 - m) * cfg.prior_strength)
@@ -226,9 +216,7 @@ function update_tech_beliefs!(net, agent_id, item_is_fake, tool_says_fake)
     end
 end
 
-# ================================================
-# SIMULATION
-# ================================================
+# simulation
 mutable struct Simulation
     cfg::SimConfig
     rng::AbstractRNG
@@ -360,9 +348,7 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
     end
 end
 
-# ================================================
-# SWEEP & EXPORT LOGIC
-# ================================================
+# sweep and export logic
 function latin_hypercube_sample(n_samples, bounds; rng=Random.default_rng())
     n_vars = length(bounds)
     samples = zeros(Float64, n_samples, n_vars)
@@ -431,7 +417,7 @@ function run_lhs_sweep()
     master_rng = Xoshiro(RNG_NUMBER)
     lhs_points = latin_hypercube_sample(NUM_LHS_POINTS, bounds; rng=master_rng)
 
-    # Arrays to hold thread outputs
+    # arrays to hold thread outputs
     sim_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
     cascades_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
     node_dfs = Vector{DataFrame}(undef, TOTAL_SIMS)
