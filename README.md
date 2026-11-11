@@ -45,7 +45,7 @@ The item is fake with probability φ.
 
 Below θᵢ an agent never checks again, so it never learns again. Agents with θᵢ above the checker's actual quality
 J = TPR − FPR are priced out. Agents below that line who have stopped anyway are trapped. A one-agent
-"first-passage" model of this barrier (`model_v2/trapmodel.py`) predicts the simulated share not checking without any
+"first-passage" model of this barrier (`model/trapmodel.py`) predicts the simulated share not checking without any
 fitting.
 
 **Defaults.** Checker R2: TPR 0.80, FPR 0.10 (J = 0.70), the best commercial AI detector on in-the-wild media.
@@ -58,8 +58,8 @@ only on c/g and ℓ/g, so g = 1 in the code.
 both, it shares under whichever of the AND and OR rules has the higher expected payoff given its beliefs.
 
 The full specification, every switch in `engine.run()`, and the differences from the original Julia model are in
-[`model_v2/README.md`](model_v2/README.md). Every result and setting decision is in
-[`model_v2/RESULTS_v3.md`](model_v2/RESULTS_v3.md).
+[`model/README.md`](model/README.md). Every result and setting decision is in
+[`model/RESULTS_v3.md`](model/RESULTS_v3.md).
 
 ## Key figure
 
@@ -102,7 +102,7 @@ processes.
 This example uses a small generated network, so it runs in seconds without the data:
 
 ```python
-import sys; sys.path.insert(0, "model_v2")
+import sys; sys.path.insert(0, "model")
 import config as C, engine as E
 from sweep import summarize
 
@@ -120,12 +120,12 @@ On the Twitter network, one run of 2,000 items takes about 5–15 s per core.
 ### Reproducing the paper
 
 ```bash
-cd model_v2
+cd model
 python synthnets.py                                    # random networks for Fig. S11
 DFP_NPROC=6 bash run_on_mac_v3.sh                      # all experiments; restartable, ~3.5 h on 6 cores
 python run_v3.py status  --out ../data/v3              # progress per experiment
 python run_v3.py collect --out ../data/v3              # chunk files -> <experiment>.parquet
-python gss_press.py extract ../GSS_stata/gss7224_r3a.dta ../data/gss/gss_press_extract.parquet   # Fig. S12
+python gss_press.py extract ../data/gss/raw/gss7224_r3a.dta ../data/gss/gss_press_extract.parquet   # Fig. S12
 python make_figures_v3.py ../data/v3 ../figures/paper_v3   # every figure, PNG + PDF
 ```
 
@@ -137,9 +137,11 @@ and start it again at any point; it picks up where it left off. To check the plu
 
 | Path | Contents |
 |---|---|
-| `model_v2/` | Current model (Python/numba): `engine.py` (the model), `config.py` (defaults, checkers, networks), `exp_v3.py` + `run_v3.py` (experiments), `v3_fig*.py` + `make_figures_v3.py` (figures), `trapmodel.py` (one-agent model) |
-| `model_v2/RESULTS_v3.md` | Decisions, numbers behind every figure, draft captions, open points |
+| `model/` | The model (Python/numba): `engine.py` (the model), `config.py` (defaults, checkers, networks), `exp_v3.py` + `run_v3.py` (experiments), `make_figures_v3.py` with `fig_*.py` (main text) and `si_*.py` (SI) for the figures, `trapmodel.py` (one-agent model). File by file in `model/README.md` |
+| `model/RESULTS_v3.md` | Decisions, numbers behind every figure, draft captions, open points |
 | `figures/paper_v3/` | Paper and SI figures (not in git) |
-| `data/` | Networks, simulation outputs, survey data (not in git) |
+| `data/` | Not in git: `networks/` (edge lists), `v3/` (simulation outputs), `gss/` (GSS extract; raw files in `gss/raw/`), `LISS/` (panel data, stays local) |
 | `docs/` | Figures used in this README |
-| `run_experiment.jl`, `analyze_*.py`, `notebooks/` | Original Julia model (v1) and its analysis. `model_v2/validate_vs_julia.py` checks that the Python engine reproduces it |
+| `figures/seminar_2026_10/` | Seminar figures and the summary of the April 2026 Julia sweep that `model/validate_vs_julia.py` checks the engine against (not in git) |
+
+The original Julia model (v1), its analysis notebooks and the v2 scripts were removed on 11 Nov 2026; they are in the git history (commit `96220d5`).
