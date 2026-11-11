@@ -143,5 +143,3 @@ and start it again at any point; it picks up where it left off. To check the plu
 | `data/` | Not in git: `networks/` (edge lists), `v3/` (simulation outputs), `gss/` (GSS extract; raw files in `gss/raw/`), `LISS/` (panel data, stays local) |
 | `docs/` | Figures used in this README |
 | `figures/seminar_2026_10/` | Seminar figures and the summary of the April 2026 Julia sweep that `model/validate_vs_julia.py` checks the engine against (not in git) |
-
-The original Julia model (v1), its analysis notebooks and the v2 scripts were removed on 11 Nov 2026; they are in the git history (commit `96220d5`).

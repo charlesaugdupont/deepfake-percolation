@@ -695,7 +695,7 @@ its number is reused for the survey figure above.)
    and report this in the SI as a robustness check whose direction is clear (more knowledge of senders crowds out
    checking); or switch the baseline and rerun every figure.
 
-13. **κₛ, the weight of πᵢ in a sender's record (11 Nov, your questions) — check run; recommendation: keep κₛ = 2.** p = w·(n⁺/n) + (1 − w)·πᵢ
+13. **κₛ, the weight of πᵢ in a sender's record (11 Nov, your questions) — check run; decided 11 Nov: keep κₛ = 2.** p = w·(n⁺/n) + (1 − w)·πᵢ
    with w = n/(n + κₛ): πᵢ counts as κₛ imagined items from the sender, so the record gets half the weight after κₛ
    items (2 now). It is partial pooling: a Beta prior over senders' genuine rates with mean πᵢ and weight κₛ; small κₛ
    means agents assume senders differ a lot. How much they really differ (main setting, 3 simulations, pairs with ≥ 20
@@ -720,7 +720,8 @@ its number is reused for the survey figure above.)
    κₛ barely matters: it only changes how the first few items from each neighbour are weighed, and most items come
    from established senders. A larger κₛ keeps p near πᵢ a little longer, so agents check a little more (2.5–3.4
    points), without changing who checks, the trapped or what spreads. Unlike point 12, where agents get ≈ 200× more
-   information about senders. Recommendation: keep κₛ = 2; one sentence plus these numbers in the SI.
+   information about senders. Decision (11 Nov): keep κₛ = 2; the check is reported in the model description (S2, two
+   short paragraphs, and the κₛ row of the parameter table in S8).
 
 ### Figure walkthrough (5 Nov): your reading, with corrections — key points for writing
 
